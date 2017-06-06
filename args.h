@@ -22,6 +22,7 @@ int get_arg( char*, char** );
 int print_args();
 
 int add_arg( char *name, char *value ) {
+	printf("Add %s = %s\n", name, value );
 	struct list *last;
 	last = &a_list;
 
@@ -43,15 +44,14 @@ int get_arg( char *name, char** value ) {
 	current = &a_list;
 	int found = 0;
 
-	do {
+	while ( current->name ) {
 		if ( !strcmp( current->name, name ) ) {
 			found = 1;
 			break;
 		}
 
 		current = current->next;
-
-	} while ( current->name );
+	}
 
 	if ( found ) {
 		*value = current->value;
@@ -72,7 +72,7 @@ int print_args() {
 	return 0;
 }
 
-int parse_args( char) {
+int parse_args( char** args ) {
 	char *p1;
 	char p2;
 	char a_name[100];
@@ -83,12 +83,8 @@ int parse_args( char) {
 	int has_name = 0;
 	int has_value = 0;
 	int last_arg = 0;
-	char** args;
-
-	extern char** argv;
 
 	a_name[ 0 ] = '\n';
-	args = argv;
 
 	args++; /* Skip program invocation name */
 
@@ -109,7 +105,7 @@ int parse_args( char) {
 					}
 
 					if ( last_arg ) {
-						add_list_item( a_name, "1" );
+						add_arg( a_name, "1" );
 						has_name = 0;
 						has_value = 0;
 					}
@@ -125,7 +121,7 @@ int parse_args( char) {
 							print_error( "Undefined argument %s", p1 - 1 );
 						}
 
-						add_list_item( a_name, "1" );
+						add_arg( a_name, "1" );
 						has_value = 0;
 						a_name[ 0 ] = p2;
 						has_name = 1;
@@ -148,7 +144,7 @@ int parse_args( char) {
 						print_error( "Undefined argument %s", p1 - 1 );
 					}
 
-					add_list_item( a_name, strcpy( a_value, p1 - 1 ) );
+					add_arg( a_name, strcpy( a_value, p1 - 1 ) );
 					has_name = 0;
 					has_value = 0;
 					break;
@@ -169,7 +165,7 @@ int parse_args( char) {
 		}
 
 		if ( last_arg ) {
-			add_list_item( a_name, "1" );
+			add_arg( a_name, "1" );
 		}
 	}
 }
