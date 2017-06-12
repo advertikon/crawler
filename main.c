@@ -1,211 +1,119 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <string.h>
+#include "header.h"
 
 int usage( void );
-int parse_args( char ** );
-int print_error( char *, ... );
+int iterate( const char* );
 
-struct list {
-	char *name;
-	char *value;
-	struct list *next;
-};
+#define MAX_LINE 200
 
-int add_list_item( char*, char*, struct list* );
-int get_list_item( char*, char**, struct list* );
-int print_args( struct list* );
+char* name = "Crawler";
+char* code;
+char* cur_input = NULL;
+char* dot = "/var/www/html/oc2102";
+char* config_name = ".crawler";
+// char* item_name;
+static int depth = 0;
+size_t path_max_size;
 
-int add_list_item( char *name, char *value, struct list *this ) {
-	struct list *last;
-	last = this;
-
-	while( last->name ) {
-		last = last->next;
-	}
-
-	last->next = malloc( sizeof( struct list ) );
-	last->name = malloc( strlen( name ) );
-	strcpy( last->name, name );
-	last->value = malloc( strlen( value ) );
-	strcpy( last->value, value );
-
-	return 0;
-}
-
-int get_list_item( char *name, char** value, struct list *this ) {
-	struct list *current;
-	current = this;
-	int found = 0;
-
-	do {
-		if ( !strcmp( current->name, name ) ) {
-			found = 1;
-			break;
-		}
-
-		current = current->next;
-
-	} while ( current->name );
-
-	if ( found ) {
-		*value = current->value;
-	}
-
-	return found ? 0 : 1;
-}
-
-int print_args( struct list* l ) {
-	struct list *ll;
-	ll = l;
-
-	while( ll->name ) {
-		printf( "Current structure to print: %s = %s\n", ll->name, ll->value );
-		ll = ll->next;
-	}
-
-	return 0;
-}
-
-char *e_mess = "";
-char *name = "Crawler";
-struct list a_list;
+struct llist* files;
+struct stat stat_buffer;
 
 int main( int argc, char **argv ) {
-	char* value;
+	char line[ MAX_LINE ];
+	char* foo = path_alloc( &path_max_size );
+
+	files = init_llist();
 
 	parse_args( argv );
-	print_args( &a_list );
+	print_args();
 
-	if ( 0 == get_list_item( "bb", &value, &a_list ) ) {
-		printf( "bb = %s\n", value );
+	code = (char*)malloc( MAX_LINE );
+	get_arg( "code", &code );
 
-	} else {
-		printf( "bb has no value\n" );
+	while ( 1 ) {
+		if ( strlen( code ) == 0 ) {
+			printf( "Specify module code\n" );
+			cur_input = code;
+		}
+
+		if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
+			perror( "Reading line error" );
+			return 1;
+		}
+
+		if ( strcmp( line, "exit\n" ) == 0 ) {
+			printf( "Exiting\n" );
+			return 0;
+		}
+
+		if ( cur_input ) {
+			strcpy( cur_input, line );
+			cur_input = NULL;
+		}
+
+		printf("%s", line );
+
+		if ( strlen( code ) == 0 ) {
+			print_error( "Module code is missing" );
+			return 1;
+		}
+
+		if( iterate( dot ) > 0 ) {
+			return 1;
+		}
 	}
 
-	if ( 0 == get_list_item( "s", &value, &a_list ) ) {
-		printf( "s = %s\n", value );
-
-	} else {
-		printf( "s has no value\n" );
-	}
+	files->print( files );
 
 	return 0;
 }
 
 int usage() {
-	printf("%s\n", "" );
+	printf("%.20s - %s\n", "exit", "exit function" );
 	exit( 0 );
 }
 
-int parse_args( char **args ) {
-	char *p1;
-	char p2;
-	char a_name[100];
-	char a_value[100];
-	int in_arg = 0;
-	int in_long_arg = 0;
-	int in_value = 0;
-	int has_name = 0;
-	int has_value = 0;
-	int last_arg = 0;
+int iterate( const char* path ) {
+	DIR* dir;
+	struct dirent* item;
+	char item_name[ path_max_size ];
 
-	a_name[ 0 ] = '\n';
+	depth++;
 
-	args++; /* Skip program invocation name */
+	printf( "Depth: %d ", depth );
+	printf( "Iterate over: %s\n", path );
 
-	while( p1 = *args++ ) {
-		while( p2 = *p1++ ) {
+	if ( lstat( path, &stat_buffer ) < 0 ) {
+		// perror( "Lstat error" );
+		depth--;
+		return 1;
+	}
 
-			if ( '-' == p2 ) {
-				if ( in_arg ) {
-					in_long_arg = 1;
+	if ( S_ISREG( stat_buffer.st_mode ) ) {
+		printf( "Is file\n" );
+		files->add( path, "1", files );
 
-				} else {
-					in_arg = 1;
-				}
+	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
+		printf( "Is DIR\n" );
+		if ( NULL == ( dir = opendir( path ) ) ) {
+			perror( "Opendir error" );
+			depth--;
+			return 1;
+		}
 
-				if ( has_name ) {
-					if ( last_arg >= 2 ) {
-						print_error( "Option %s has no value", a_name );
-					}
-
-					if ( last_arg ) {
-						add_list_item( a_name, "1", &a_list );
-						has_name = 0;
-						has_value = 0;
-					}
-				}
-
-			} else if ( '"' == p2 || '\'' == p2 ) {
-				// skip
-
-			} else {
-				if ( in_arg ) {
-					if ( in_value ) {
-						if ( !has_name ) {
-							print_error( "Undefined argument %s", p1 - 1 );
-						}
-
-						add_list_item( a_name, "1", &a_list );
-						has_value = 0;
-						a_name[ 0 ] = p2;
-						has_name = 1;
-					}
-
-					if ( in_long_arg ) {
-						strcpy( a_name, p1 - 1 );
-						has_name = 1;
-						break;
-
-					} else {
-						a_name[ 0 ] = p2;
-						a_name[ 1 ] = '\0';
-						has_name = 1;
-						in_value = 1;
-					}
-
-				} else {
-					if ( !has_name  ) {
-						print_error( "Undefined argument %s", p1 - 1 );
-					}
-
-					add_list_item( a_name, strcpy( a_value, p1 - 1 ), &a_list );
-					has_name = 0;
-					has_value = 0;
-					break;
-				}
+		while ( NULL != ( item = readdir( dir ) ) ) {
+			if ( item->d_name[ 0 ] == '.' ) {
+				continue;
 			}
+
+			strcpy( item_name, path );
+			strcat( item_name, "/" );
+			strcat( item_name, item->d_name );
+
+			iterate( item_name );
 		}
 
-		last_arg = in_arg + in_long_arg * 2;
-
-		in_value = 0;
-		in_arg = 0;
-		in_long_arg = 0;
+		closedir( dir );
 	}
-
-	if ( has_name ) {
-		if ( last_arg >= 2 ) {
-			print_error( "Option %s has no value", a_name );
-		}
-
-		if ( last_arg ) {
-			add_list_item( a_name, "1", &a_list );
-		}
-	}
-}
-
-int print_error( char * msg, ... ) {
-	va_list args;
-
-	va_start( args, msg );
-	fprintf( stderr, "%s: ", name );
-	vfprintf( stderr, msg, args );
-	fputc( '\n', stderr );
-	va_end( args );
-	
-	exit( 1 );
+		
+	depth--;
 }
