@@ -8,7 +8,7 @@ int iterate( const char* );
 char* name = "Crawler";
 char* code;
 char* cur_input = NULL;
-char* dot = "/var/www/html/oc2102";
+char* dot = "/var/www/html/oc";
 char* config_name = ".crawler";
 // char* item_name;
 static int depth = 0;
@@ -77,14 +77,10 @@ int iterate( const char* path ) {
 	struct dirent* item;
 	char item_name[ path_max_size ];
 
-	depth++;
-
 	printf( "Depth: %d ", depth );
 	printf( "Iterate over: %s\n", path );
 
 	if ( lstat( path, &stat_buffer ) < 0 ) {
-		// perror( "Lstat error" );
-		depth--;
 		return 1;
 	}
 
@@ -94,11 +90,15 @@ int iterate( const char* path ) {
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
 		printf( "Is DIR\n" );
+		printf( "Path: %s\n", path );
 		if ( NULL == ( dir = opendir( path ) ) ) {
 			perror( "Opendir error" );
-			depth--;
 			return 1;
 		}
+
+		depth++;
+
+		printf( "Open DIR\n" );
 
 		while ( NULL != ( item = readdir( dir ) ) ) {
 			if ( item->d_name[ 0 ] == '.' ) {
@@ -113,7 +113,7 @@ int iterate( const char* path ) {
 		}
 
 		closedir( dir );
+		depth--;
 	}
 		
-	depth--;
 }

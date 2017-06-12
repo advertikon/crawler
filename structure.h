@@ -26,8 +26,11 @@ static int get( char*, char**, LL* );
 static int print( LL* );
 LL* init_llist();
 
+static size_t total_size = 0;
+
 int add( const char *name, char *value, LL* l ) {
 	printf("Add %s = %s\n", name, value );
+	printf( "Size: %d\n", total_size );
 
 	while( l->current ) {
 		printf( "Current ponter: %p\n", l->current );
@@ -38,9 +41,13 @@ int add( const char *name, char *value, LL* l ) {
 
 	l->current = malloc( sizeof( LLI ) );
 
+	total_size += sizeof( LLI );
+
 	printf( "Allocate memory for list item strcture\n" );
 
 	l->current->name = malloc( strlen( name ) );
+
+	total_size += strlen( name );
 
 	printf( "Allocate memory for name\n" );
 
@@ -49,6 +56,8 @@ int add( const char *name, char *value, LL* l ) {
 	printf( "Copt name\n" );
 
 	l->current->value = malloc( strlen( value ) );
+
+	total_size += strlen( value );
 
 	printf( "Allocate memory for value\n" );
 
