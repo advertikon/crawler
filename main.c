@@ -10,12 +10,10 @@ char* code;
 char* cur_input = NULL;
 char* dot = "/var/www/html/oc";
 char* config_name = ".crawler";
-// char* item_name;
 static int depth = 0;
 size_t path_max_size;
 
 struct llist* files;
-struct stat stat_buffer;
 
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
@@ -46,7 +44,7 @@ int main( int argc, char **argv ) {
 		}
 
 		if ( cur_input ) {
-			strcpy( cur_input, line );
+			strncpy( cur_input, line, MAX_LINE );
 			cur_input = NULL;
 		}
 
@@ -58,11 +56,14 @@ int main( int argc, char **argv ) {
 		}
 
 		if( iterate( dot ) > 0 ) {
-			return 1;
+			// print_error( "Iterate error" );
 		}
-	}
 
-	files->print( files );
+		printf( "Iterate end\n" );
+
+		files->print( files );
+		break;
+	}
 
 	return 0;
 }
@@ -76,6 +77,7 @@ int iterate( const char* path ) {
 	DIR* dir;
 	struct dirent* item;
 	char item_name[ path_max_size ];
+	struct stat stat_buffer;
 
 	printf( "Depth: %d ", depth );
 	printf( "Iterate over: %s\n", path );
@@ -105,9 +107,15 @@ int iterate( const char* path ) {
 				continue;
 			}
 
-			strcpy( item_name, path );
-			strcat( item_name, "/" );
-			strcat( item_name, item->d_name );
+			strncpy( item_name, path, path_max_size );
+
+			if ( strlen( item_name ) + 1 + strlen( item->d_name ) < path_max_size ) {
+				strcat( item_name, "/" );
+				strcat( item_name, item->d_name );
+
+			} else {
+				print_error( "Path name is too long" );
+			}
 
 			iterate( item_name );
 		}
