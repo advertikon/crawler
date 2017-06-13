@@ -31,14 +31,14 @@ static size_t total_size = 0;
 int add( const char *name, char *value, LL* l ) {
 	size_t size;
 	char foo[ 100 ];
-	LLI* prev;
+	LLI* prev = NULL;
 
 	printf("Add %s = %s\n", name, value );
 	printf( "Size: %ld\n", total_size );
 
 	while( l->current ) {
-		printf( "Current ponter: %p\n", l->current );
-		printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
+		// printf( "Current ponter: %p\n", l->current );
+		// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
 		prev = l->current;
 		l->current = l->current->next;
 	}
@@ -48,7 +48,6 @@ int add( const char *name, char *value, LL* l ) {
 
 	if ( NULL != prev ) {
 		prev->next = l->current;
-		printf( "Prev value: %s\n", prev->name );
 	}
 	// printf( "Allocated %ld bytes for structure, address: %p\n", sizeof( LLI ), l->current );
 	// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
@@ -58,13 +57,21 @@ int add( const char *name, char *value, LL* l ) {
 	l->current->name = (char*)malloc( size + 1 );
 	// printf( "Allocated %ld bytes for name, address: %p\n", size + 1 , l->current->name );
 	total_size += size + 1;
-	strncpy( l->current->name, name, size );
+	strncpy( l->current->name, name, size + 1 );
+
+	if ( l->current->name[ strlen( l->current->name ) - 1 ] != '\0' ) {
+		strcat( l->current->name, "\0" );
+	}
 
 	size = strlen( value );
 	l->current->value = (char*)malloc( size + 1 );
 	// printf( "Allocated %ld bytes for value, address: %p\n", size + 1 , l->current->value );
 	total_size += size + 1;
-	strncpy( l->current->value, value, size );
+	strncpy( l->current->value, value, size + 1 );
+
+	if ( l->current->value[ strlen( l->current->value) - 1 ] != '\0' ) {
+		strcat( l->current->value, "\0" );
+	}
 
 	if ( NULL == l->first ) {
 		printf( "First to current" );
