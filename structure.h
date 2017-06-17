@@ -29,44 +29,52 @@ LL* init_llist();
 static size_t total_size = 0;
 
 int add( const char *name, char *value, LL* l ) {
+	size_t size;
+	char foo[ 100 ];
+	LLI* prev = NULL;
+
 	printf("Add %s = %s\n", name, value );
-	printf( "Size: %d\n", total_size );
+	printf( "Size: %ld\n", total_size );
 
 	while( l->current ) {
-		printf( "Current ponter: %p\n", l->current );
+		// printf( "Current ponter: %p\n", l->current );
+		// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
+		prev = l->current;
 		l->current = l->current->next;
 	}
 
-	printf( "Get empty slot\n" );
+	l->current = (LLI*)malloc( sizeof( LLI ) );
+	l->current->next = NULL;
 
-	l->current = malloc( sizeof( LLI ) );
-
+	if ( NULL != prev ) {
+		prev->next = l->current;
+	}
+	// printf( "Allocated %ld bytes for structure, address: %p\n", sizeof( LLI ), l->current );
+	// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
 	total_size += sizeof( LLI );
 
-	printf( "Allocate memory for list item strcture\n" );
+	size = strlen( name );
+	l->current->name = (char*)malloc( size + 1 );
+	// printf( "Allocated %ld bytes for name, address: %p\n", size + 1 , l->current->name );
+	total_size += size + 1;
+	strncpy( l->current->name, name, size + 1 );
 
-	l->current->name = malloc( strlen( name ) );
+	if ( l->current->name[ strlen( l->current->name ) - 1 ] != '\0' ) {
+		strcat( l->current->name, "\0" );
+	}
 
-	total_size += strlen( name );
+	size = strlen( value );
+	l->current->value = (char*)malloc( size + 1 );
+	// printf( "Allocated %ld bytes for value, address: %p\n", size + 1 , l->current->value );
+	total_size += size + 1;
+	strncpy( l->current->value, value, size + 1 );
 
-	printf( "Allocate memory for name\n" );
-
-	strcpy( l->current->name, name );
-
-	printf( "Copt name\n" );
-
-	l->current->value = malloc( strlen( value ) );
-
-	total_size += strlen( value );
-
-	printf( "Allocate memory for value\n" );
-
-	strcpy( l->current->value, value );
-
-	printf( "Copy value\n" );
+	if ( l->current->value[ strlen( l->current->value) - 1 ] != '\0' ) {
+		strcat( l->current->value, "\0" );
+	}
 
 	if ( NULL == l->first ) {
-		printf( "First is empty\n" );
+		printf( "First to current" );
 		l->first = l->current;
 	}
 
@@ -98,9 +106,10 @@ int get( char *name, char** value, LL* l ) {
 }
 
 int print( LL* l ) {
+	printf( "Print\n" );
 	l->current = l->first;
 
-	while( l->current->name ) {
+	while( l->current ) {
 		printf( "Current structure to print: %s = %s\n", l->current->name, l->current->value );
 		l->current = l->current->next;
 	}
@@ -108,11 +117,13 @@ int print( LL* l ) {
 	return 0;
 }
 
-LL* init_llist() { printf( "Init start\n" );
-	// LLI* tt = malloc( sizeof( LLI ) );
+LL* init_llist() {
 	LL* t = malloc( sizeof( LL ) );
 	t->add = &add;
+	t->get = &get;
+	t->print = &print;
+	t->current = NULL;
+	t->first = NULL;
 
-printf( "Init end\n" );
 	return t;
 }
