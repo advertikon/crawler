@@ -17,9 +17,18 @@ size_t path_max_size;
 struct llist* files;
 struct stat stat_buffer;
 
+char* cwd;
+
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
-	char* foo = path_alloc( &path_max_size );
+	cwd = path_alloc( &path_max_size );
+
+	/* Simulate cwd */
+	chdir( dot );
+
+	if ( NULL == getcwd( cwd, path_max_size ) ) {
+		print_error( "Failed to get CWD" );
+	}
 
 	files = init_llist();
 
