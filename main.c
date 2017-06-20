@@ -13,7 +13,7 @@ char* config_name = ".crawler";
 static int depth = 0;
 size_t path_max_size;
 
-struct llist* files;
+struct llist* files, include_dir, exclude_dir, *lconfig;
 
 char* cwd;
 
@@ -28,6 +28,13 @@ int main( int argc, char **argv ) {
 		print_error( "Failed to get CWD" );
 	}
 
+	/* Handle config */
+	// if ( -1 == openat( AT_FDCWD, config_name, ) ) {
+	// 	print_error( "Failed to open fonfig file %s relative to CWD %s\n", config_name, dot );
+	// }
+	yaml( config_name, lconfig );
+
+	exit(1);
 	files = init_llist();
 
 	parse_args( argv );
