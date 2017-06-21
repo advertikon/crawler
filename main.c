@@ -1,11 +1,6 @@
 #include "header.h"
 
-int usage( void );
-int iterate( const char* );
-
-#define MAX_LINE 200
-
-char* name = "Crawler";
+char* mod_name = "Crawler";
 char* code;
 char* cur_input = NULL;
 char* dot = "/var/www/html/oc";
@@ -32,7 +27,6 @@ int main( int argc, char **argv ) {
 	// if ( -1 == openat( AT_FDCWD, config_name, ) ) {
 	// 	print_error( "Failed to open fonfig file %s relative to CWD %s\n", config_name, dot );
 	// }
-	yaml( config_name, lconfig );
 
 	exit(1);
 	files = init_llist();
