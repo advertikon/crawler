@@ -1,3 +1,5 @@
+#ifndef ARGS_H
+#define ARGS_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,3 +17,5 @@ int parse_args();
 int add_arg( char*, char* );
 int get_arg( char*, char** );
 int print_args();
+
+#endif

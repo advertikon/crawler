@@ -1,5 +1,5 @@
 /**
- * Error handling functionallity
+ * Error handling functionality
  */
 #include "error.h"
 

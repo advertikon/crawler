@@ -5,10 +5,10 @@
 
 static size_t total_size = 0;
 
-int add( const char *name, char *value, llist* l ) {
+int add( const char *name, char *value, struct llist* l ) {
 	size_t size;
 	char foo[ 100 ];
-	llist_item* prev = NULL;
+	struct llist_item* prev = NULL;
 
 	printf("Add %s = %s\n", name, value );
 	printf( "Size: %ld\n", total_size );
@@ -28,7 +28,7 @@ int add( const char *name, char *value, llist* l ) {
 	}
 	// printf( "Allocated %ld bytes for structure, address: %p\n", sizeof( LLI ), l->current );
 	// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
-	total_size += sizeof( llist_item );
+	total_size += sizeof( struct llist_item );
 
 	size = strlen( name );
 	l->current->name = (char*)malloc( size + 1 );
@@ -94,8 +94,8 @@ int print( struct llist* l ) {
 	return 0;
 }
 
-llist* init_llist() {
-	struct llist* t = malloc( sizeof( llist ) );
+struct llist* init_llist() {
+	struct llist* t = malloc( sizeof( struct llist ) );
 	t->add = &add;
 	t->get = &get;
 	t->print = &print;

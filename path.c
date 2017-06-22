@@ -2,21 +2,10 @@
  *
  *
  */
+
 #include "path.h"
 
-#ifdef PATH_MAX
-	static long pathmax = PATH_MAX;
-#else
-	static long pathmax = 0;
-#endif
-
-static long posix_version = 0;
-static long xsi_version = 0;
-
-/* If PATH_MAX is indeterminate, no guarantee this is adequate */
-#define PATH_MAX_GUESS 4096
-
-char *path_alloc( size_t* sizep ) {
+char* path_alloc( size_t* sizep ) {
 	char* ptr;
 	size_t size;
 
