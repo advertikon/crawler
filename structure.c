@@ -51,16 +51,20 @@ int add( const char *name, char *value, struct llist* l ) {
 	}
 
 	if ( NULL == l->first ) {
-		printf( "First to current" );
+		// printf( "First to current" );
 		l->first = l->current;
 	}
 
-	printf( "Exit add\n" );
+	// printf( "Exit add\n" );
 
 	return 0;
 }
 
 int get( char *name, char** value, struct llist* l ) {
+	if ( !l->first ) {
+		print_error( "Structure::Get: Failed to rewind structure - pointer to the first element is empty" );
+	}
+
 	l->current = l->first;
 	int found = 0;
 
@@ -83,8 +87,12 @@ int get( char *name, char** value, struct llist* l ) {
 }
 
 int print( struct llist* l ) {
-	printf( "Print\n" );
+	if ( !l->first ) {
+		print_error( "Structure::Print: Failed to rewind structure - pointer to the first element is empty" );
+	}
+
 	l->current = l->first;
+	printf( "Print\n" );
 
 	while( l->current ) {
 		printf( "Current structure to print: %s = %s\n", l->current->name, l->current->value );
@@ -94,11 +102,49 @@ int print( struct llist* l ) {
 	return 0;
 }
 
+/*
+ * Remove element from the list and rewind the list
+ * name - value name
+ * llist - list structure
+ * Returns 0 is OK, 1 if specified name is not present in the list
+ */
+int remove( char *name, struct llist* l ) {
+	if ( !l->first ) {
+		print_error( "Structure::Remove: Failed to rewind structure - pointer to the first element is empty" );
+	}
+
+	l->current = l->first;
+	struct llist prev = NULL;
+	int found = 0;
+
+	while ( l->current->name ) {
+		if ( !strcmp( l->current->name, name ) ) {
+			if ( prev ) {
+				prev->next = l->curent->next;
+				free( l->current );
+				l->current = l->first;
+
+			} else {
+				l->first = l->current->next;
+				free( l->current );
+			}
+			
+			return 0;
+		}
+
+		prev = l->current;
+		l->current = l->current->next;
+	}
+
+	return 1;
+}
+
 struct llist* init_llist() {
 	struct llist* t = malloc( sizeof( struct llist ) );
 	t->add = &add;
 	t->get = &get;
 	t->print = &print;
+	t->remove = &remove;
 	t->current = NULL;
 	t->first = NULL;
 
