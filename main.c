@@ -11,13 +11,14 @@ static int depth = 0;
 
 size_t path_max_size;
 
-struct llist *files, *include_dir, *exclude_dir, *lconfig;
+struct llist *files, *include_dir, *exclude_dir, *temp_include_dir;
 
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
 	int command = 0;
 	int sub_command = 0;
+	int wait_confirm = 0;
 
 	/* Simulate cwd */
 	// chdir( dot );
@@ -46,67 +47,98 @@ int main( int argc, char **argv ) {
 	get_arg( "code", &code );
 
 	while ( 1 ) {
-		if ( strlen( code ) == 0 ) {
-			printf( "Specify module code\n" );
-			cur_input = code;
+		// if ( strlen( code ) == 0 ) {
+		// 	printf( "Specify module code\n" );
+		// 	cur_input = code;
+		// }
+
+		if ( 0 == command ) {
+			show_commands();
 		}
 
 		if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
-			perror( "Reading line error" );
+			perror( "Failed to read line fron STDIN" );
 			return 1;
 		}
 
-		if ( strcmp( line, "exit\n" ) == 0 ) {
+		line[ strlen( line ) - 1 ] = '\0';
+
+		if ( strcmp( line, "exit" ) == 0 ) {
 			printf( "Exiting\n" );
 			return 0;
 		}
 
-		if ( cur_input ) {
-			strncpy( cur_input, line, MAX_LINE );
-			cur_input = NULL;
+		// if ( cur_input ) {
+		// 	strncpy( cur_input, line, MAX_LINE );
+		// 	cur_input = NULL;
 
-		} else if ( 0 == command ) {
+		// } else 
+		if ( 0 == command ) {
 			switch( atoi( line ) ) {
 			case C_ADD_INCL_FOLDER:
-				if( 0 == start_add_include_dir() ) {
+				if( 0 == start_add() ) {
 					command = C_ADD_INCL_FOLDER;
+					printf( "To save changes print 's', to discard changes - 'q'\n" );
 				}
 
 				break;
 			case C_DEL_INCL_FOLDER:
-				if( 0 == start_del_include_dir() ) {
+				if( 0 == start_del( include_dir ) ) {
 					command = C_DEL_INCL_FOLDER;
 				}
 
 				break;
 			default:
-				printf(
-					"Add including directory - %d\n"
-					"Add excluding directory - %d\n"
-					"Delete included directory - %d\n",
-					"Delete excluded directory - %d\n",
-					C_ADD_INCL_FOLDER,
-					C_ADD_EXCL_FOLDER,
-					C_DEL_INCL_FOLDER,
-					C_DEL_EXCL_FOLDER
-				);
+				show_commands();
 				break;
 			}
 
 		} else if ( 0 != command ) {
-			switch( command ) {
-				case C_ADD_INCL_FOLDER:
-				add_include_dir( line );
+			if ( 1 == wait_confirm ) {
+				if ( 0 == strcmp( "y", line ) || 0 == strcmp( "Y", line ) ) {
+					clear_temp_config();
+				}
+
+				wait_confirm = 0;
+				command = 0;
+				continue;
+			}
+
+			if ( 0 == strcmp( "q", line ) ) {
+				printf( "Are sure:y/n?\n" );
+				wait_confirm = 1;
+				continue;
+			}
+
+			if ( 0 == strcmp( "s", line ) ) {
+				flush_config();
+				command = 0;
 				break;
 			}
+
+			switch( command ) {
+			case C_ADD_INCL_FOLDER:
+				if ( NULL == temp_include_dir ) {
+					temp_include_dir = init_llist();
+				}
+
+				add_to( line, temp_include_dir );
+				break;
+			default :
+				printf( "Unknown command: %s\n", command );
+				command = 0;
+			}
+
+		} else {
+			show_commands();
 		}
 
-		printf("%s", line );
+		// printf("%s", line );
 
-		if ( strlen( code ) == 0 ) {
-			print_error( "Module code is missing" );
-			return 1;
-		}
+		// if ( strlen( code ) == 0 ) {
+		// 	print_error( "Module code is missing" );
+		// 	return 1;
+		// }
 
 		// if( iterate( dot ) > 0 ) {
 		// 	// print_error( "Iterate error" );
@@ -181,8 +213,7 @@ int iterate( const char* path ) {
 		
 }
 
-int parse_config( void )
-{
+int parse_config( void ) {
   yaml_parser_t parser;
   yaml_event_t  event;
   FILE *fh = fopen( config_name, "r" );
@@ -215,8 +246,8 @@ int parse_config( void )
     case YAML_STREAM_START_EVENT: puts( "STREAM START" ); break;
     case YAML_STREAM_END_EVENT:   puts( "STREAM END" );   break;
     /* Block delimeters */
-    case YAML_DOCUMENT_START_EVENT: puts( "<b>Start Document</b>" ); break;
-    case YAML_DOCUMENT_END_EVENT:   puts( "<b>End Document</b>" );   break;
+    case YAML_DOCUMENT_START_EVENT: puts( "Start Document" ); break;
+    case YAML_DOCUMENT_END_EVENT:   puts( "End Document" );   break;
     case YAML_SEQUENCE_START_EVENT:
     	puts( "Start Sequence" );
     	is_sequence = 1;
@@ -224,6 +255,7 @@ int parse_config( void )
     case YAML_SEQUENCE_END_EVENT:
     	puts( "End Sequence" );
     	is_sequence = 0;
+    	is_include_dir = 0;
    		break;
     case YAML_MAPPING_START_EVENT:
     	puts( "Start Mapping" );
@@ -238,12 +270,14 @@ int parse_config( void )
     case YAML_ALIAS_EVENT:  printf( "Got alias (anchor %s)\n", event.data.alias.anchor ); break;
     case YAML_SCALAR_EVENT:
 	    printf( "Got scalar (value %s)\n", event.data.scalar.value );
-	    if ( is_mapping == 1 && strcmp( "include_dir", event.data.scalar.value ) == 0 ) {
+
+	    if ( is_mapping == 1 && !is_sequence && strcmp( "include_dir", event.data.scalar.value ) == 0 ) {
 	    	is_include_dir = 1;
 
 	    } else if ( is_sequence == 1 && is_include_dir == 1 ) {
-	    	include_dir->add( event.data.scalar.value, "1", include_dir );
+	    	include_dir->add( NULL, event.data.scalar.value, include_dir );
 	    }
+
    		break;
     }
 
@@ -273,19 +307,17 @@ int save_config() {
 		return 1;
 	}
 
-	printf( "Include_dir: %p\n", include_dir );
-	printf( "Current: %p\n", include_dir->current );
-	printf( "First: %p\n", include_dir->first );
+	// printf( "Include_dir: %p\n", include_dir );
+	// printf( "Current: %p\n", include_dir->current );
+	// printf( "First: %p\n", include_dir->first );
 
 	if ( NULL != include_dir && include_dir->first ) {
 		include_dir->current = include_dir->first;
 
-		fputs( "include_dir\n", tc );
+		fputs( "include_dir:\n", tc );
 
 		while( include_dir->current && include_dir->current->name ) {
-			fputs( " - ", tc );
-			fputs( include_dir->current->name, tc );
-			putc( '\n', tc );
+			fprintf( tc, " - %s\n", include_dir->current->value );
 
 			include_dir->current = include_dir->current->next;
 		}
@@ -326,16 +358,13 @@ int save_config() {
 	}
 }
 
-int start_add_include_dir() {
-	int c = 1;
+int start_del( struct llist* l ) {
+	if ( l && l->first ) {
+		l->current = l->first;
 
-	if ( include_dir && include_dir->first ) {
-		include_dir->current = include_dir->first;
-
-		while( include_dir->current && include_dir->current->name ) {
-			printf( "%.2d - %s\n", c++, include_dir->current->name );
-
-			include_dir->current = include_dir->current->next;
+		while( l->current && l->current->name ) {
+			printf( "[%.2s] - %s\n", l->current->name, l->current->value );
+			l->current = l->current->next;
 		}
 
 		printf( "Print number of record to be deleted\nTo exit print %s\n", abort_command_str );
@@ -349,39 +378,51 @@ int start_add_include_dir() {
 	return 0;
 }
 
-int start_del_include_dir() {
-	printf( "Type in one directory at line\nTo exit print %s\n", abort_command_str);
+int start_add() {
+	printf( "Type in one item at line\nTo exit print %s\n", abort_command_str);
 
 	return 0;
 }
 
-int add_include_dir( char *dir ) {
-	include_dir->add( dir, "1", include_dir );
-
-	return 0;
-}
-
-int del_incl_dir( int pos ) {
-	int c = 1;
-
-	if ( include_dir && include_dir->first ) {
-		include_dir->current = include_dir->first;
-
-		while( include_dir->current && include_dir->current->name ) {
-			if ( c == pos ) {
-				include_dir->remove( include_dir->current->name, include_dir );
-
-				break;
-			}
-
-			include_dir->current = include_dir->current->next;
-		}
-		
-	} else {
-		printf( "List is empty\n" );
-
-		return 1;
+int add_to( char *item, struct llist* l ) {
+	if ( l ) {
+		return l->add( NULL, item, l );
 	}
 
-	return 0;
+	fprintf( stderr, "Failed to add item to list: list is missing" );
+
+	return 1;
+}
+
+int del_from( char *name, struct llist* l ) {
+	if ( l ) {
+		return l->remove( name, l );
+	}
+
+	fprintf( stderr, "Failed to remove item from list: list is missing" );
+
+	return 1;
+}
+
+int show_commands() {
+	printf(
+		"Set module name - %d\n"
+		"Add including directory - %d\n"
+		"Add excluding directory - %d\n"
+		"Delete included directory - %d\n"
+		"Delete excluded directory - %d\n",
+		C_SET_NAME,
+		C_ADD_INCL_FOLDER,
+		C_ADD_EXCL_FOLDER,
+		C_DEL_INCL_FOLDER,
+		C_DEL_EXCL_FOLDER
+	);
+}
+
+int flush_config() {
+	include_dir->merge( include_dir, temp_include_dir );
+}
+
+int clear_temp_config() {
+	temp_include_dir->empty( temp_include_dir );
 }

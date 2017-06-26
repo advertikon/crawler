@@ -5,13 +5,19 @@
 
 static size_t total_size = 0;
 
-int add( const char *name, char *value, struct llist* l ) {
+static int s_add( const char *name, const char *value, struct llist* l ) {
 	size_t size;
 	char foo[ 100 ];
 	struct llist_item* prev = NULL;
+	int max_index = 0;
 
-	printf("Add %s = %s\n", name, value );
-	printf( "Size: %ld\n", total_size );
+	if ( s_get( name, NULL, l ) == 0 ) {
+		fprintf( stderr, "Failed to add item to list: name '%s' already exists", name );
+		return 1;
+	}
+
+	// printf("Add %s = %s\n", name, value );
+	// printf( "Size: %ld\n", total_size );
 
 	while( l->current ) {
 		// printf( "Current ponter: %p\n", l->current );
@@ -21,34 +27,51 @@ int add( const char *name, char *value, struct llist* l ) {
 	}
 
 	l->current = (struct llist_item*)malloc( sizeof( struct llist_item ) );
+	l->size += sizeof( struct llist_item );
 	l->current->next = NULL;
 
+	// Not the first element
 	if ( NULL != prev ) {
 		prev->next = l->current;
+		l->current->index = ++prev->index;
+
+	// First element in the list
+	} else {
+		l->current->index = 0;
 	}
 	// printf( "Allocated %ld bytes for structure, address: %p\n", sizeof( LLI ), l->current );
 	// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
-	total_size += sizeof( struct llist_item );
 
-	size = strlen( name );
-	l->current->name = (char*)malloc( size + 1 );
+	if ( NULL == name ) {
+		// printf( "Index: %d\n", l->current->index );
+		sprintf( foo, "%d", l->current->index );
+		size = strlen( foo ) + 1;
+		l->current->name = (char*)malloc( size );
+		strncpy( l->current->name, foo, size );
+
+	} else {
+		size = strlen( name ) + 1;
+		l->current->name = (char*)malloc( size );
+		strncpy( l->current->name, name, size );
+	}
+	
+	// printf("there\n");
 	// printf( "Allocated %ld bytes for name, address: %p\n", size + 1 , l->current->name );
-	total_size += size + 1;
-	strncpy( l->current->name, name, size + 1 );
+	l->size += size;
 
-	if ( l->current->name[ strlen( l->current->name ) - 1 ] != '\0' ) {
-		strcat( l->current->name, "\0" );
-	}
+	// if ( l->current->name[ strlen( l->current->name ) - 1 ] != '\0' ) {
+	// 	strcat( l->current->name, "\0" );
+	// }
 
-	size = strlen( value );
-	l->current->value = (char*)malloc( size + 1 );
+	size = strlen( value ) + 1;
+	l->current->value = (char*)malloc( size );
 	// printf( "Allocated %ld bytes for value, address: %p\n", size + 1 , l->current->value );
-	total_size += size + 1;
-	strncpy( l->current->value, value, size + 1 );
+	l->size += size;
+	strncpy( l->current->value, value, size );
 
-	if ( l->current->value[ strlen( l->current->value) - 1 ] != '\0' ) {
-		strcat( l->current->value, "\0" );
-	}
+	// if ( l->current->value[ strlen( l->current->value) - 1 ] != '\0' ) {
+	// 	strcat( l->current->value, "\0" );
+	// }
 
 	if ( NULL == l->first ) {
 		// printf( "First to current" );
@@ -60,16 +83,25 @@ int add( const char *name, char *value, struct llist* l ) {
 	return 0;
 }
 
-int get( char *name, char** value, struct llist* l ) {
-	if ( !l->first ) {
-		print_error( "Structure::Get: Failed to rewind structure - pointer to the first element is empty" );
+static int s_get( const char *name, char** value, struct llist* l ) {
+	int found = 0;
+
+	if ( NULL == name ) {
+		return 1;
+	}
+
+	if ( NULL == l ) {
+		return 1;
+	}
+
+	if ( NULL == l->first ) {
+		return 1;
 	}
 
 	l->current = l->first;
-	int found = 0;
 
-	while ( l->current->name ) {
-		if ( !strcmp( l->current->name, name ) ) {
+	while ( l->current && l->current->name ) {
+		if ( 0 == strcmp( l->current->name, name ) ) {
 			found = 1;
 			break;
 		}
@@ -77,7 +109,7 @@ int get( char *name, char** value, struct llist* l ) {
 		l->current = l->current->next;
 	}
 
-	if ( found ) {
+	if ( found && NULL != value ) {
 		*value = l->current->value;
 	}
 
@@ -86,13 +118,45 @@ int get( char *name, char** value, struct llist* l ) {
 	return found ? 0 : 1;
 }
 
-int print( struct llist* l ) {
-	if ( !l->first ) {
-		print_error( "Structure::Print: Failed to rewind structure - pointer to the first element is empty" );
+/**
+ * Checks if specific value exists in the structure
+ * value - value to be searched
+ * l - llist structure to search in
+ * Returns 0 is element exists, 1 - otherwise
+ */
+static int s_has_value( const char *value, struct llist* l ) {
+	int found = 0;
+
+	if ( NULL == value || NULL == l || NULL == l->first ) {
+		return 1;
 	}
 
 	l->current = l->first;
-	printf( "Print\n" );
+
+	while ( l->current && l->current->name ) {
+		if ( !strcmp( l->current->value, value ) ) {
+			found = 1;
+			break;
+		}
+
+		l->current = l->current->next;
+	}
+
+	// if ( found ) {
+	// 	*value = l->current->value;
+	// }
+
+	l->current = l->first;
+
+	return found ? 0 : 1;
+}
+
+static int s_print( struct llist* l ) {
+	if ( NULL == l->first ) {
+		return 1;
+	}
+
+	l->current = l->first;
 
 	while( l->current ) {
 		printf( "Current structure to print: %s = %s\n", l->current->name, l->current->value );
@@ -108,24 +172,27 @@ int print( struct llist* l ) {
  * llist - list structure
  * Returns 0 is OK, 1 if specified name is not present in the list
  */
-int remove( char *name, struct llist* l ) {
-	if ( !l->first ) {
-		print_error( "Structure::Remove: Failed to rewind structure - pointer to the first element is empty" );
+static int s_remove( const char *name, struct llist* l ) {
+	if ( NULL == l->first ) {
+		fprintf( stderr, "Structure::Remove: List is empty" );
+		return 0;
 	}
 
 	l->current = l->first;
-	struct llist prev = NULL;
+	struct llist_item *prev;
 	int found = 0;
 
 	while ( l->current->name ) {
 		if ( !strcmp( l->current->name, name ) ) {
-			if ( prev ) {
-				prev->next = l->curent->next;
+			if ( NULL != prev ) {
+				prev->next = l->current->next;
+				l->size -= L_MEM( l->current );
 				free( l->current );
 				l->current = l->first;
 
 			} else {
 				l->first = l->current->next;
+				l->size -= L_MEM( l->current );
 				free( l->current );
 			}
 			
@@ -139,14 +206,62 @@ int remove( char *name, struct llist* l ) {
 	return 1;
 }
 
+static int s_merge( struct llist *one, struct llist *two ) {
+	if ( two && two->first ) {
+		two->current = two->first;
+
+		do {
+
+			// Merge only unique values
+			if ( 0 == s_has_value( two->current->value, one ) ) {
+				continue; 
+			}
+
+			// If index (name) already exists - use numeric sequential index
+			if ( 0 == one->get( two->current->name, NULL, one ) ) {
+				one->add( NULL, two->current->value, one );
+
+			} else {
+				one->add( two->current->name, two->current->value, one );
+			}
+			
+		} while ( two->current = two->current->next );
+
+		one->current = one->first;
+		two->current = two->first;
+	}
+
+	return 0;
+}
+
+static int s_empty( struct llist *l ) {
+	struct llist_item* c;
+
+	if ( l->first ) {
+		l->current = l->first;
+
+		while ( l->current ) {
+			c = l->current;
+			l->current = l->current->next;
+			l->size -= L_MEM( c );
+			free( c );
+		}
+	}
+
+	return 0;
+}
+
 struct llist* init_llist() {
 	struct llist* t = malloc( sizeof( struct llist ) );
-	t->add = &add;
-	t->get = &get;
-	t->print = &print;
-	t->remove = &remove;
+	t->add = &s_add;
+	t->get = &s_get;
+	t->print = &s_print;
+	t->remove = &s_remove;
+	t->merge = &s_merge;
+	t->empty = &s_empty;
 	t->current = NULL;
 	t->first = NULL;
+	t->size = sizeof( struct llist );
 
 	return t;
 }

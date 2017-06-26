@@ -1,9 +1,5 @@
-#comment;
-
 include_dir:
-	- one
-	- two
-
-exclude_dir:
-	- three
-	- four
+ - rrrrrrrrrrr
+ - ddd
+ - wwwwww
+ - sssss
