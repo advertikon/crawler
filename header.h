@@ -18,13 +18,14 @@ int usage( void );
 int iterate( const char* );
 int parse_config( void );
 int save_config( void );
-int add_to( char*, struct llist* );
+int add_to( char* );
 int del_from( char*, struct llist* );
-int start_add();
+int start_add( struct llist* );
 int start_del( struct llist* );
 int show_commands( void );
-int flush_config( void );
-int clear_temp_config( void );
+int implement_config( void );
+int abort_config( void );
+int print_del_list( struct llist* );
 
 #define MAX_LINE 200
 

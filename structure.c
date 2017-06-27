@@ -27,6 +27,11 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 	}
 
 	l->current = (struct llist_item*)malloc( sizeof( struct llist_item ) );
+
+	if ( NULL == l->current ) {
+		print_error( "Failed allocate memory for list structure" );
+	}
+
 	l->size += sizeof( struct llist_item );
 	l->current->next = NULL;
 
@@ -47,11 +52,21 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 		sprintf( foo, "%d", l->current->index );
 		size = strlen( foo ) + 1;
 		l->current->name = (char*)malloc( size );
+
+		if ( NULL == l->current->name ) {
+			print_error( "Failed allocate memory for list name" );
+		}
+
 		strncpy( l->current->name, foo, size );
 
 	} else {
 		size = strlen( name ) + 1;
 		l->current->name = (char*)malloc( size );
+
+		if ( NULL == l->current->name ) {
+			print_error( "Failed allocate memory for list name" );
+		}
+
 		strncpy( l->current->name, name, size );
 	}
 	
@@ -65,6 +80,11 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 
 	size = strlen( value ) + 1;
 	l->current->value = (char*)malloc( size );
+
+	if ( NULL == l->current->value ) {
+		print_error( "Failed allocate memory for list value" );
+	}
+
 	// printf( "Allocated %ld bytes for value, address: %p\n", size + 1 , l->current->value );
 	l->size += size;
 	strncpy( l->current->value, value, size );
@@ -159,7 +179,7 @@ static int s_print( struct llist* l ) {
 	l->current = l->first;
 
 	while( l->current ) {
-		printf( "Current structure to print: %s = %s\n", l->current->name, l->current->value );
+		printf( "%s = %s\n", l->current->name, l->current->value );
 		l->current = l->current->next;
 	}
 
@@ -246,19 +266,45 @@ static int s_empty( struct llist *l ) {
 			l->size -= L_MEM( c );
 			free( c );
 		}
+
+		l->first = NULL;
+		l->current = NULL;
 	}
 
 	return 0;
+}
+
+/**
+ * Calculates list length
+ * l - target list
+ * Returns number of list items
+ */
+static int s_count( struct llist* l ) {
+	int c = 0;
+
+	if ( NULL != l && NULL != l->first ) {
+		l->current = l->first;
+
+		do {
+			c++;
+		} while ( NULL != ( l->current = l->current->next ) );
+
+		l->current = l->first;
+	}
+
+	return c;
 }
 
 struct llist* init_llist() {
 	struct llist* t = malloc( sizeof( struct llist ) );
 	t->add = &s_add;
 	t->get = &s_get;
+	t->has_value = &s_has_value;
 	t->print = &s_print;
 	t->remove = &s_remove;
 	t->merge = &s_merge;
 	t->empty = &s_empty;
+	t->count = &s_count;
 	t->current = NULL;
 	t->first = NULL;
 	t->size = sizeof( struct llist );
