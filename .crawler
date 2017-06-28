@@ -4,4 +4,7 @@ include_dir:
  - wwwwww
  - sssss
  - new
- - z
+ 
+sone_stuff:
+  - foo
+  - bar

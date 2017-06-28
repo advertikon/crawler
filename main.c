@@ -8,17 +8,28 @@ char* config_name = ".crawler";
 char* cwd;
 
 static int depth = 0;
+int command = 0;
+int config_is_dirty = 0;
+int wait_confirm = 0;
+int save_me = 0;
 
 size_t path_max_size;
 
-struct llist *files, *include_dir, *exclude_dir, *temp;
+struct llist
+			*files,
+			*include_dir,
+			*exclude_dir,
+			*include_file,
+			*exclude_file,
+			*include_regexp,
+			*exclude_regexp,
+			*temp;
 
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
-	int command = 0;
-	int sub_command = 0;
-	int wait_confirm = 0;
+
+	signal( SIGINT, &int_handler );
 
 	/* Simulate cwd */
 	// chdir( dot );
@@ -34,9 +45,13 @@ int main( int argc, char **argv ) {
 
 	include_dir = init_llist();
 	exclude_dir = init_llist();
+	include_file = init_llist();
+	exclude_file = init_llist();
+	include_regexp = init_llist();
+	exclude_regexp = init_llist();
 	parse_config();
 
-	include_dir->print( include_dir );
+	// include_dir->print( include_dir );
 
 	files = init_llist();
 
@@ -57,15 +72,16 @@ int main( int argc, char **argv ) {
 		}
 
 		if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
-			perror( "Failed to read line fron STDIN" );
+			perror( "Failed to read line from STDIN" );
 			return 1;
 		}
 
 		line[ strlen( line ) - 1 ] = '\0';
 
 		if ( strcmp( line, "exit" ) == 0 ) {
-			printf( "Exiting\n" );
-			return 0;
+			printf( "Exiting...\n" );
+		
+			break;
 		}
 
 		// if ( cur_input ) {
@@ -87,6 +103,30 @@ int main( int argc, char **argv ) {
 				}
 
 				break;
+			case C_ADD_INCL_FILE:
+				if( 0 == start_add( include_file ) ) {
+					command = C_ADD_INCL_FILE;
+				}
+
+				break;
+			case C_DEL_INCL_FILE:
+				if( 0 == start_del( include_file ) ) {
+					command = C_DEL_INCL_FILE;
+				}
+
+				break;
+			case C_ADD_INCL_REGEXP:
+				if( 0 == start_add( include_regexp ) ) {
+					command = C_ADD_INCL_REGEXP;
+				}
+
+				break;
+			case C_DEL_INCL_REGEXP:
+				if( 0 == start_del( include_regexp ) ) {
+					command = C_DEL_INCL_REGEXP;
+				}
+
+				break;
 			default:
 				show_commands();
 				break;
@@ -95,24 +135,31 @@ int main( int argc, char **argv ) {
 		} else if ( 0 != command ) {
 			if ( 1 == wait_confirm ) {
 				if ( 0 == strcmp( "y", line ) || 0 == strcmp( "Y", line ) ) {
-					abort_config();
+					if ( 1 == save_me ) {
+						confirmed_operation();
+					}
+
+					end_operation();
+
+					continue;
 				}
 
 				wait_confirm = 0;
-				command = 0;
+				save_me = 0;
+				printf( "Does not matter... \n" );
+				
 				continue;
 			}
 
-			if ( 0 == strcmp( "q", line ) ) {
-				printf( "Are sure:y/n?\n" );
+			if ( 0 == strcmp( "q", line ) || 0 == strcmp( "s", line ) ) {
+				printf( "Are sure (y/n)?: " );
 				wait_confirm = 1;
-				continue;
-			}
 
-			if ( 0 == strcmp( "s", line ) ) {
-				implement_config();
-				command = 0;
-				break;
+				if ( 's' == line[ 0 ] ) {
+					save_me = 1;
+				}
+
+				continue;
 			}
 
 			if ( NULL == temp ) {
@@ -125,6 +172,18 @@ int main( int argc, char **argv ) {
 				break;
 			case C_DEL_INCL_FOLDER:
 				del_from( line, include_dir );
+				break;
+			case C_ADD_INCL_FILE:
+				add_to( line );
+				break;
+			case C_DEL_INCL_FILE:
+				del_from( line, include_file );
+				break;
+			case C_ADD_INCL_REGEXP:
+				add_to( line );
+				break;
+			case C_DEL_INCL_REGEXP:
+				del_from( line, include_regexp );
 				break;
 			default :
 				printf( "Unknown command: %s\n", command );
@@ -222,6 +281,11 @@ int parse_config( void ) {
   int is_mapping = 0;
   int is_sequence = 0;
   int is_include_dir = 0;
+  int is_include_file = 0;
+  int is_include_regexp = 0;
+  int is_exclude_dir = 0;
+  int is_exclude_file = 0;
+  int is_exclude_regexp = 0;
 
   if ( NULL == fh ) {
 	perror( "Failed to open configuration file" );
@@ -266,6 +330,11 @@ int parse_config( void ) {
     	// puts( "End Sequence" );
     	is_sequence = 0;
     	is_include_dir = 0;
+    	is_include_file = 0;
+    	is_include_regexp = 0;
+    	is_exclude_dir = 0;
+    	is_exclude_file = 0;
+    	is_exclude_regexp = 0;
    		break;
     case YAML_MAPPING_START_EVENT:
     	// puts( "Start Mapping" );
@@ -274,7 +343,6 @@ int parse_config( void ) {
     case YAML_MAPPING_END_EVENT:
     	// puts( "End Mapping" );
     	is_mapping = 0;
-    	is_include_dir = 0;
    	 	break;
     /* Data */
     case YAML_ALIAS_EVENT:
@@ -283,12 +351,46 @@ int parse_config( void ) {
     case YAML_SCALAR_EVENT:
 	    // printf( "Got scalar (value %s)\n", event.data.scalar.value );
 
-	    if ( is_mapping == 1 && !is_sequence && strcmp( "include_dir", event.data.scalar.value ) == 0 ) {
-	    	is_include_dir = 1;
+    	if ( 0 == is_sequence && 1 == is_mapping ) {
+    		if ( 0 == strcmp( "include_dir", event.data.scalar.value ) ) {
+    			is_include_dir = 1;
 
-	    } else if ( is_sequence == 1 && is_include_dir == 1 ) {
-	    	include_dir->add( NULL, event.data.scalar.value, include_dir );
-	    }
+    		} else if ( 0 == strcmp( "include_file", event.data.scalar.value ) ) {
+    			is_include_file = 1;
+
+    		} else if ( 0 == strcmp( "include_regexp", event.data.scalar.value ) ) {
+    			is_include_regexp = 1;
+
+    		} else if ( 0 == strcmp( "exclude_dir", event.data.scalar.value ) ) {
+    			is_exclude_dir = 1;
+
+    		} else if ( 0 == strcmp( "exclude_file", event.data.scalar.value ) ) {
+    			is_exclude_file = 1;
+
+    		} else if ( 0 == strcmp( "exclude_regexp", event.data.scalar.value ) ) {
+    			is_exclude_regexp = 1;
+    		}
+
+    	} else if ( 1 == is_sequence ) {
+    		if ( is_include_dir ) {
+    			include_dir->add( NULL, event.data.scalar.value, include_dir );
+
+    		} else if ( is_include_file ) {
+    			include_file->add( NULL, event.data.scalar.value, include_file );
+
+    		} else if ( is_include_regexp ) {
+    			include_regexp->add( NULL, event.data.scalar.value, include_regexp );
+
+    		} else if ( is_exclude_dir ) {
+    			exclude_dir->add( NULL, event.data.scalar.value, exclude_dir );
+
+    		} else if ( is_exclude_file ) {
+    			exclude_file->add( NULL, event.data.scalar.value, exclude_file );
+
+    		} else if ( is_exclude_regexp ) {
+    			exclude_regexp->add( NULL, event.data.scalar.value, exclude_regexp );
+    		}
+    	}
 
    		break;
     }
@@ -314,6 +416,8 @@ int save_config() {
 	FILE *tc = fopen( raw_name, "w" );
 	int e = 0;
 
+	if ( 0 == config_is_dirty ) return 0;
+
 	if ( NULL == tc ) {
 		perror( "Failed to create temporary configuration file" );
 		return 1;
@@ -323,21 +427,12 @@ int save_config() {
 	// printf( "Current: %p\n", include_dir->current );
 	// printf( "First: %p\n", include_dir->first );
 
-	if ( NULL != include_dir && include_dir->first ) {
-		include_dir->current = include_dir->first;
-
-		fputs( "include_dir:\n", tc );
-
-		while( include_dir->current && include_dir->current->name ) {
-			fprintf( tc, " - %s\n", include_dir->current->value );
-
-			include_dir->current = include_dir->current->next;
-		}
-
-	} else {
-		fputs( "Included directory configuration is missing\n", stderr );
-
-	}
+	write_config_section( "include_dir", tc, include_dir );
+	write_config_section( "include_file", tc, include_file );
+	write_config_section( "include_regexp", tc, include_regexp );
+	write_config_section( "exclude_dir", tc, exclude_dir );
+	write_config_section( "exclude_file", tc, exclude_file );
+	write_config_section( "exclude_regexp", tc, exclude_regexp );
 
 	/* Save changes into disk */
 	if ( 0 == e ) {
@@ -368,6 +463,21 @@ int save_config() {
 			return 2;
 		}
 	}
+}
+
+int write_config_section( char* name, FILE* stream, struct llist* l ) {
+	if ( NULL != l && l->first ) {
+		l->current = l->first;
+
+		fprintf( stream, "%s:\n", name );
+
+		while( l->current ) {
+			fprintf( stream, " - %s\n", l->current->value );
+			l->current = l->current->next;
+		}
+	}
+
+	return 0;
 }
 
 int start_del( struct llist* l ) {
@@ -452,25 +562,153 @@ int del_from( char *name, struct llist* l ) {
 
 int show_commands() {
 	printf(
-		"Set module name           - %d\n"
-		"Add including directory   - %d\n"
-		"Add excluding directory   - %d\n"
-		"Delete included directory - %d\n"
-		"Delete excluded directory - %d\n"
+		"%2d - Set module name\n"
+
+		"%2d - Add included directories\n"
+		"%2d - Add excluded directories\n"
+		"%2d - Delete included directories\n"
+		"%2d - Delete excluded directories\n"
+
+		"%2d - Add included files\n"
+		"%2d - Add excluded files\n"
+		"%2d - Delete included files\n"
+		"%2d - Delete excluded files\n"
+
+		"%2d - Add included regexp\n"
+		"%2d - Add excluded regexp\n"
+		"%2d - Delete included regexp\n"
+		"%2d - Delete excluded regexp\n"
 		"Make your choice > ",
+
 		C_SET_NAME,
+
 		C_ADD_INCL_FOLDER,
 		C_ADD_EXCL_FOLDER,
 		C_DEL_INCL_FOLDER,
-		C_DEL_EXCL_FOLDER
+		C_DEL_EXCL_FOLDER,
+
+		C_ADD_INCL_FILE,
+		C_ADD_EXCL_FILE,
+		C_DEL_INCL_FILE,
+		C_DEL_EXCL_FILE,
+
+		C_ADD_INCL_REGEXP,
+		C_ADD_EXCL_REGEXP,
+		C_DEL_INCL_REGEXP,
+		C_DEL_EXCL_REGEXP
 	);
 }
 
-int implement_config() {
-	temp->empty( temp );
-	// include_dir->merge( include_dir, temp );
+int confirmed_operation() {
+	switch ( command ) {
+	case C_ADD_INCL_FOLDER:
+		add_to_config( include_dir );
+		break;
+	case C_DEL_INCL_FOLDER:
+		remove_from_config( include_dir );
+		break;
+	case C_ADD_INCL_FILE:
+		add_to_config( include_file );
+		break;
+	case C_DEL_INCL_FILE:
+		remove_from_config( include_file );
+		break;
+	case C_ADD_INCL_REGEXP:
+		add_to_config( include_regexp );
+		break;
+	case C_DEL_INCL_REGEXP:
+		remove_from_config( include_regexp );
+		break;
+	case C_ADD_EXCL_FOLDER:
+		add_to_config( exclude_dir );
+		break;
+	case C_DEL_EXCL_FOLDER:
+		remove_from_config( exclude_dir );
+		break;
+	case C_ADD_EXCL_FILE:
+		add_to_config( exclude_file );
+		break;
+	case C_DEL_EXCL_FILE:
+		remove_from_config( exclude_file );
+		break;
+	case C_ADD_EXCL_REGEXP:
+		add_to_config( exclude_regexp );
+		break;
+	case C_DEL_EXCL_REGEXP:
+		remove_from_config( exclude_regexp );
+		break;
+	default:
+		print_error( "Invalid command: %d\n", command );
+	}
+
+	return 0;
 }
 
-int abort_config() {
+int add_to_config( struct llist* l ) {
+	l->merge( temp, l );
+	config_is_dirty = 1;
+
+	return 0;
+}
+
+int remove_from_config( struct llist* l ) {
+	if ( NULL != l && NULL != l->first ) {
+		l->current = l->first;
+
+		while( l->current ) {
+			if ( 0 == temp->has_value( l->current->name, temp ) ) {
+				l->remove( l->current->name, l );
+			}
+
+			l->current = l->current->next;
+		}
+
+		config_is_dirty = 1;
+	}
+
+	return 0;
+}
+
+int end_operation() {
 	temp->empty( temp );
+	wait_confirm = 0;
+	command = 0;
+	save_me = 0;
+
+	return 0;
+}
+
+/**
+ * Reliable signal function from APU (restarts all interrupted system calls but SIGALARM)
+ *
+ */
+Sigfunc *signal( int signo, Sigfunc *func ) {
+	struct sigaction act, oact;
+
+	act.sa_handler = func;
+	sigemptyset( &act.sa_mask );
+	act.sa_flags = 0;
+
+	if ( signo == SIGALRM ) {
+		#ifdef SA_INTERRUPT
+		act.sa_flags |= SA_INTERRUPT;
+		#endif
+
+	} else {
+		act.sa_flags |= SA_RESTART;
+	}
+
+	if ( sigaction( signo, &act, &oact ) < 0 ) {
+		return( SIG_ERR );
+	}
+
+	return( oact.sa_handler );
+}
+
+void int_handler( int s ) {
+	if ( s == SIGINT ) {
+		printf( "\nInterrupted\n" );
+		save_config();
+		exit( 2 );
+	}
 }

@@ -226,7 +226,10 @@ static int s_remove( const char *name, struct llist* l ) {
 	return 1;
 }
 
-static int s_merge( struct llist *one, struct llist *two ) {
+/**
+ * Adds unique records from structure 'two' to structure 'one'
+ */
+static int s_merge( struct llist *two, struct llist *one ) {
 	if ( two && two->first ) {
 		two->current = two->first;
 
