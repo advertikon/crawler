@@ -171,6 +171,8 @@ int main( int argc, char **argv ) {
 			case C_ITERATE:
 				files->empty( files );
 				iterate( getcwd( NULL, path_max_size ) );
+				break;
+			case C_PRINT_FILES:
 				files->print( files );
 				break;
 			default:
@@ -290,6 +292,10 @@ int iterate( const char* path ) {
 
 	if ( S_ISREG( stat_buffer.st_mode ) ) {
 		// printf( "Is file\n" );
+		if ( 0 != check_file( path ) ) {
+			return 0;
+		}
+
 		files->add( NULL, path, files );
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
@@ -631,6 +637,7 @@ int show_commands() {
 		"%2d - Delete excluded regexp\n"
 
 		"%2d - Iterate over FS\n"
+		"%2d - Print files"
 
 		"Make your choice > ",
 
@@ -651,7 +658,8 @@ int show_commands() {
 		C_DEL_INCL_REGEXP,
 		C_DEL_EXCL_REGEXP,
 
-		C_ITERATE
+		C_ITERATE,
+		C_PRINT_FILES
 	);
 }
 
@@ -774,3 +782,26 @@ void int_handler( int s ) {
 		exit( 2 );
 	}
 }
+
+int check_file( char *name ) {
+	char dir[ path_max_size ];
+	char *pos;
+
+	// File is in the include list
+	if ( 0 == include_file->has_value( name, include_file ) ) {
+		return 0;
+	}
+
+	// File is in the exclude list
+	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
+		return 1;
+	}
+
+	strncpy( dir, name, path_max_size );
+	pos = strrchr( name, '/' );
+	*pos = '\0';
+
+	if ( 0 == include_dir->has_value( dir, include_dir ) ) {
+		if ( 0 == exclude_dir->has_value( dir, ) )
+	}
+} 
