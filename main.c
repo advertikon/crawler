@@ -168,6 +168,11 @@ int main( int argc, char **argv ) {
 				}
 
 				break;
+			case C_ITERATE:
+				files->empty( files );
+				iterate( getcwd( NULL, path_max_size ) );
+				files->print( files );
+				break;
 			default:
 				show_commands();
 				break;
@@ -276,20 +281,20 @@ int iterate( const char* path ) {
 	char item_name[ path_max_size ];
 	struct stat stat_buffer;
 
-	printf( "Depth: %d ", depth );
-	printf( "Iterate over: %s\n", path );
+	// printf( "Depth: %d ", depth );
+	// printf( "Iterate over: %s\n", path );
 
 	if ( lstat( path, &stat_buffer ) < 0 ) {
 		return 1;
 	}
 
 	if ( S_ISREG( stat_buffer.st_mode ) ) {
-		printf( "Is file\n" );
-		files->add( path, "1", files );
+		// printf( "Is file\n" );
+		files->add( NULL, path, files );
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
-		printf( "Is DIR\n" );
-		printf( "Path: %s\n", path );
+		// printf( "Is DIR\n" );
+		// printf( "Path: %s\n", path );
 		if ( NULL == ( dir = opendir( path ) ) ) {
 			perror( "Opendir error" );
 			return 1;
@@ -297,7 +302,7 @@ int iterate( const char* path ) {
 
 		depth++;
 
-		printf( "Open DIR\n" );
+		// printf( "Open DIR\n" );
 
 		while ( NULL != ( item = readdir( dir ) ) ) {
 			if ( item->d_name[ 0 ] == '.' ) {
@@ -306,7 +311,7 @@ int iterate( const char* path ) {
 
 			strncpy( item_name, path, path_max_size );
 
-			if ( strlen( item_name ) + 1 + strlen( item->d_name ) < path_max_size ) {
+			if ( strlen( item_name ) + 2 + strlen( item->d_name ) < path_max_size ) {
 				strcat( item_name, "/" );
 				strcat( item_name, item->d_name );
 
@@ -624,6 +629,9 @@ int show_commands() {
 		"%2d - Add excluded regexp\n"
 		"%2d - Delete included regexp\n"
 		"%2d - Delete excluded regexp\n"
+
+		"%2d - Iterate over FS\n"
+
 		"Make your choice > ",
 
 		C_SET_NAME,
@@ -641,7 +649,9 @@ int show_commands() {
 		C_ADD_INCL_REGEXP,
 		C_ADD_EXCL_REGEXP,
 		C_DEL_INCL_REGEXP,
-		C_DEL_EXCL_REGEXP
+		C_DEL_EXCL_REGEXP,
+
+		C_ITERATE
 	);
 }
 

@@ -32,6 +32,7 @@ int confirmed_operation( void );
 int end_operation( void );
 int write_config_section( char*, FILE*, struct llist* );
 void int_handler( int );
+int check_file( char* );
 
 #define MAX_LINE 200
 
@@ -48,7 +49,9 @@ enum COMMANDS {
 	C_ADD_EXCL_REGEXP,
 	C_DEL_INCL_REGEXP,
 	C_DEL_EXCL_REGEXP,
-	C_SET_NAME
+	C_SET_NAME,
+	C_ITERATE,
+	C_PRINT_FILES
 };
 
 typedef void Sigfunc( int );
