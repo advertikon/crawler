@@ -29,7 +29,7 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 	l->current = (struct llist_item*)malloc( sizeof( struct llist_item ) );
 
 	if ( NULL == l->current ) {
-		print_error( "Failed allocate memory for list structure" );
+		print_error( "Failed to allocate memory for list structure" );
 	}
 
 	l->size += sizeof( struct llist_item );
@@ -199,23 +199,24 @@ static int s_remove( const char *name, struct llist* l ) {
 	}
 
 	l->current = l->first;
-	struct llist_item *prev;
+	struct llist_item *prev = NULL;
 	int found = 0;
 
-	while ( l->current->name ) {
-		if ( !strcmp( l->current->name, name ) ) {
+	while ( l->current && l->current->name ) {
+		if ( 0 == strcmp( l->current->name, name ) ) {
 			if ( NULL != prev ) {
 				prev->next = l->current->next;
 				l->size -= L_MEM( l->current );
 				free( l->current );
-				l->current = l->first;
-
+				
 			} else {
 				l->first = l->current->next;
 				l->size -= L_MEM( l->current );
 				free( l->current );
 			}
-			
+
+			l->current = l->first;
+
 			return 0;
 		}
 

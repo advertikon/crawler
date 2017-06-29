@@ -84,6 +84,11 @@ int main( int argc, char **argv ) {
 			break;
 		}
 
+		if ( 0 == strcmp( "show_temp", line ) ) {
+			temp->print( temp );
+			continue;
+		}
+
 		// if ( cur_input ) {
 		// 	strncpy( cur_input, line, MAX_LINE );
 		// 	cur_input = NULL;
@@ -124,6 +129,42 @@ int main( int argc, char **argv ) {
 			case C_DEL_INCL_REGEXP:
 				if( 0 == start_del( include_regexp ) ) {
 					command = C_DEL_INCL_REGEXP;
+				}
+
+				break;
+			case C_ADD_EXCL_FOLDER:
+				if( 0 == start_add( exclude_dir ) ) {
+					command = C_ADD_EXCL_FOLDER;
+				}
+
+				break;
+			case C_DEL_EXCL_FOLDER:
+				if( 0 == start_del( exclude_dir ) ) {
+					command = C_DEL_EXCL_FOLDER;
+				}
+
+				break;
+			case C_ADD_EXCL_FILE:
+				if( 0 == start_add( exclude_file ) ) {
+					command = C_ADD_EXCL_FILE;
+				}
+
+				break;
+			case C_DEL_EXCL_FILE:
+				if( 0 == start_del( exclude_file ) ) {
+					command = C_DEL_EXCL_FILE;
+				}
+
+				break;
+			case C_ADD_EXCL_REGEXP:
+				if( 0 == start_add( exclude_regexp ) ) {
+					command = C_ADD_EXCL_REGEXP;
+				}
+
+				break;
+			case C_DEL_EXCL_REGEXP:
+				if( 0 == start_del( exclude_regexp ) ) {
+					command = C_DEL_EXCL_REGEXP;
 				}
 
 				break;
@@ -168,25 +209,33 @@ int main( int argc, char **argv ) {
 
 			switch( command ) {
 			case C_ADD_INCL_FOLDER:
+			case C_ADD_EXCL_FOLDER:
+			case C_ADD_INCL_FILE:
+			case C_ADD_EXCL_FILE:
+			case C_ADD_INCL_REGEXP:
+			case C_ADD_EXCL_REGEXP:
 				add_to( line );
 				break;
 			case C_DEL_INCL_FOLDER:
 				del_from( line, include_dir );
 				break;
-			case C_ADD_INCL_FILE:
-				add_to( line );
-				break;
 			case C_DEL_INCL_FILE:
 				del_from( line, include_file );
-				break;
-			case C_ADD_INCL_REGEXP:
-				add_to( line );
 				break;
 			case C_DEL_INCL_REGEXP:
 				del_from( line, include_regexp );
 				break;
+			case C_DEL_EXCL_FOLDER:
+				del_from( line, exclude_dir );
+				break;
+			case C_DEL_EXCL_FILE:
+				del_from( line, exclude_file );
+				break;
+			case C_DEL_EXCL_REGEXP:
+				del_from( line, exclude_regexp );
+				break;
 			default :
-				printf( "Unknown command: %s\n", command );
+				printf( "Unknown command: %d\n", command );
 				command = 0;
 			}
 
@@ -414,7 +463,6 @@ int save_config() {
 	char *raw_name = "~conf";
 	char *temp_name = "~temp";
 	FILE *tc = fopen( raw_name, "w" );
-	int e = 0;
 
 	if ( 0 == config_is_dirty ) return 0;
 
@@ -435,33 +483,31 @@ int save_config() {
 	write_config_section( "exclude_regexp", tc, exclude_regexp );
 
 	/* Save changes into disk */
-	if ( 0 == e ) {
-		if ( 0 == rename( config_name, temp_name ) ) { /* old config to temp name */
-			if ( 0 == rename( raw_name, config_name ) ) { /* new config to config name */
-				if ( 0 != unlink( temp_name ) ) { /* delete old config */
-					perror( "Failed to delete transient configuration file" );
-					return 5;
-				}
-
-				fputs( "Configuration file was saved\n", stdout );
-
-			} else {
-				perror( "Failed to set name for newly created configuration file" );
-
-				if ( rename( temp_name, config_name ) ) {
-					fputs( "Old configuration file is restored\n", stderr );
-					return 3;
-
-				} else {
-					perror( "Failed to restore old configuration file" );
-					return 4;
-				}
+	if ( 0 == rename( config_name, temp_name ) ) { /* old config to temp name */
+		if ( 0 == rename( raw_name, config_name ) ) { /* new config to config name */
+			if ( 0 != unlink( temp_name ) ) { /* delete old config */
+				perror( "Failed to delete transient configuration file" );
+				return 5;
 			}
 
+			fputs( "Configuration file was saved\n", stdout );
+
 		} else {
-			perror( "Failed to save new configurations. Failed set temporary name for configuration file" );
-			return 2;
+			perror( "Failed to set name for newly created configuration file" );
+
+			if ( rename( temp_name, config_name ) ) {
+				fputs( "Old configuration file is restored\n", stderr );
+				return 3;
+
+			} else {
+				perror( "Failed to restore old configuration file" );
+				return 4;
+			}
 		}
+
+	} else {
+		perror( "Failed to save new configurations. Failed set temporary name for configuration file" );
+		return 2;
 	}
 }
 
@@ -606,6 +652,8 @@ int confirmed_operation() {
 		break;
 	case C_DEL_INCL_FOLDER:
 		remove_from_config( include_dir );
+		printf( "New contents\n" );
+		include_dir->print( include_dir );
 		break;
 	case C_ADD_INCL_FILE:
 		add_to_config( include_file );
@@ -658,6 +706,10 @@ int remove_from_config( struct llist* l ) {
 		while( l->current ) {
 			if ( 0 == temp->has_value( l->current->name, temp ) ) {
 				l->remove( l->current->name, l );
+
+				if ( NULL == l->current ) {
+					break;
+				}
 			}
 
 			l->current = l->current->next;
