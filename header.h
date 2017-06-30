@@ -19,8 +19,8 @@ int usage( void );
 int iterate( const char* );
 int parse_config( void );
 int save_config( void );
-int add_to( char* );
-int del_from( char*, struct llist* );
+int add_to( const char* );
+int del_from( const char*, struct llist* );
 int start_add( struct llist* );
 int start_del( struct llist* );
 int show_commands( void );
@@ -32,7 +32,9 @@ int confirmed_operation( void );
 int end_operation( void );
 int write_config_section( char*, FILE*, struct llist* );
 void int_handler( int );
-int check_file( char* );
+int check_file( const char* );
+int collide_length( const char*, struct llist*, int* );
+int collide_span( const char*, const char*, int* );
 
 #define MAX_LINE 200
 

@@ -12,6 +12,7 @@ int command = 0;
 int config_is_dirty = 0;
 int wait_confirm = 0;
 int save_me = 0;
+int cwd_length = 0;
 
 size_t path_max_size;
 
@@ -170,7 +171,9 @@ int main( int argc, char **argv ) {
 				break;
 			case C_ITERATE:
 				files->empty( files );
-				iterate( getcwd( NULL, path_max_size ) );
+				getcwd( cwd, path_max_size );
+				cwd_length = strlen( cwd );
+				iterate( cwd );
 				break;
 			case C_PRINT_FILES:
 				files->print( files );
@@ -296,7 +299,7 @@ int iterate( const char* path ) {
 			return 0;
 		}
 
-		files->add( NULL, path, files );
+		files->add( &path[ cwd_length ], path, files );
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
 		// printf( "Is DIR\n" );
@@ -331,7 +334,6 @@ int iterate( const char* path ) {
 		closedir( dir );
 		depth--;
 	}
-		
 }
 
 int parse_config( void ) {
@@ -594,7 +596,7 @@ int start_add( struct llist* l ) {
 	return 0;
 }
 
-int add_to( char *item ) {
+int add_to( const char *item ) {
 	if ( NULL != temp ) {
 		printf( "Add item >> " );
 		return temp->add( NULL, item, temp );
@@ -605,7 +607,7 @@ int add_to( char *item ) {
 	return 1;
 }
 
-int del_from( char *name, struct llist* l ) {
+int del_from( const char *name, struct llist* l ) {
 	if ( NULL != temp ) {
 		temp->add( NULL, name, temp );
 		printf( "\033[%dA", l->count( l ) + 1 );
@@ -783,9 +785,12 @@ void int_handler( int s ) {
 	}
 }
 
-int check_file( char *name ) {
+int check_file( const char *name ) {
 	char dir[ path_max_size ];
 	char *pos;
+
+	int max_incl_dir;
+	int max_excl_dir;
 
 	// File is in the include list
 	if ( 0 == include_file->has_value( name, include_file ) ) {
@@ -798,10 +803,63 @@ int check_file( char *name ) {
 	}
 
 	strncpy( dir, name, path_max_size );
-	pos = strrchr( name, '/' );
-	*pos = '\0';
+	pos = strrchr( dir, '/' );
 
-	if ( 0 == include_dir->has_value( dir, include_dir ) ) {
-		if ( 0 == exclude_dir->has_value( dir, ) )
+	if ( NULL != pos ) {
+		*pos = '\0';
+
+		collide_legth( dir, include_dir, &max_incl_dir );
+		collide_legth( dir, exclude_dir, &max_excl_dir );
+		
+		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
+			return 0;
+		}
+
+		if ( max_excl_dir > 0 ) {
+			return 1;
+		}
 	}
-} 
+}
+
+int collide_length( const char *name, struct llist *l, int *max ) {
+	int span = 0;
+
+	*max = 0;
+
+	if ( l->first ) {
+		l->current = l->first;
+
+		while ( l->current ) {
+			collide_span( l->current->name, name, &span );
+
+			if ( span > *max ) {
+				*max = span;
+			}
+		}
+
+		l->current = l->first;
+	}
+
+	return 0;
+}
+
+int collide_span( const char *h, const char *n, int *s ) {
+	int i;
+	int nl = strlen( n );
+
+	*s = 0;
+
+	if ( nl <= strlen( hl ) ) {
+		for( i = 0; i < nl; i++ ) {
+			if ( h[ i ] == n[ i ] ) {
+				*s++;
+
+			} else {
+				break;
+			}
+		}
+	}
+
+	return 0;
+}
+
