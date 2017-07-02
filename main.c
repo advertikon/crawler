@@ -8,6 +8,8 @@ char* config_name = ".crawler";
 char* cwd;
 
 static int depth = 0;
+static off_t total_size = 0;
+
 int command = 0;
 int config_is_dirty = 0;
 int wait_confirm = 0;
@@ -26,23 +28,18 @@ struct llist
 			*exclude_regexp,
 			*temp;
 
+static clock_t st_time;
+static clock_t en_time;
+static long clockticks = 0;
+static struct tms st_cpu;
+static struct tms en_cpu;
+
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
+	int files_count;
 
 	signal( SIGINT, &int_handler );
-
-	/* Simulate cwd */
-	// chdir( dot );
-
-	// if ( NULL == getcwd( cwd, path_max_size ) ) {
-	// 	print_error( "Failed to get CWD" );
-	// }
-
-	/* Handle config */
-	// if ( -1 == openat( AT_FDCWD, config_name, ) ) {
-	// 	print_error( "Failed to open fonfig file %s relative to CWD %s\n", config_name, dot );
-	// }
 
 	include_dir = init_llist();
 	exclude_dir = init_llist();
@@ -51,8 +48,6 @@ int main( int argc, char **argv ) {
 	include_regexp = init_llist();
 	exclude_regexp = init_llist();
 	parse_config();
-
-	// include_dir->print( include_dir );
 
 	files = init_llist();
 
@@ -63,11 +58,6 @@ int main( int argc, char **argv ) {
 	get_arg( "code", &code );
 
 	while ( 1 ) {
-		// if ( strlen( code ) == 0 ) {
-		// 	printf( "Specify module code\n" );
-		// 	cur_input = code;
-		// }
-
 		if ( 0 == command ) {
 			show_commands();
 		}
@@ -90,11 +80,6 @@ int main( int argc, char **argv ) {
 			continue;
 		}
 
-		// if ( cur_input ) {
-		// 	strncpy( cur_input, line, MAX_LINE );
-		// 	cur_input = NULL;
-
-		// } else 
 		if ( 0 == command ) {
 			switch( atoi( line ) ) {
 			case C_ADD_INCL_FOLDER:
@@ -173,10 +158,19 @@ int main( int argc, char **argv ) {
 				files->empty( files );
 				getcwd( cwd, path_max_size );
 				cwd_length = strlen( cwd );
-				iterate( cwd );
+				files_count = 0;
+				total_size = 0;
+				start_clock();
+				iterate( cwd, &files_count );
+				end_clock( "Time:" );
+				printf("%d files was selected\n", files_count );
+				printf( "Total size: %ld\n", total_size );
 				break;
 			case C_PRINT_FILES:
 				files->print( files );
+				break;
+			case C_PRINT_CONFIG:
+				print_config();
 				break;
 			default:
 				show_commands();
@@ -252,22 +246,6 @@ int main( int argc, char **argv ) {
 		} else {
 			show_commands();
 		}
-
-		// printf("%s", line );
-
-		// if ( strlen( code ) == 0 ) {
-		// 	print_error( "Module code is missing" );
-		// 	return 1;
-		// }
-
-		// if( iterate( dot ) > 0 ) {
-		// 	// print_error( "Iterate error" );
-		// }
-
-		// printf( "Iterate end\n" );
-
-		// files->print( files );
-		// break;
 	}
 
 	save_config();
@@ -280,26 +258,26 @@ int usage() {
 	exit( 0 );
 }
 
-int iterate( const char* path ) {
+int iterate( const char* path, int* c ) {
 	DIR* dir;
 	struct dirent* item;
 	char item_name[ path_max_size ];
 	struct stat stat_buffer;
-
-	// printf( "Depth: %d ", depth );
-	// printf( "Iterate over: %s\n", path );
 
 	if ( lstat( path, &stat_buffer ) < 0 ) {
 		return 1;
 	}
 
 	if ( S_ISREG( stat_buffer.st_mode ) ) {
-		// printf( "Is file\n" );
-		if ( 0 != check_file( path ) ) {
+		
+		// Path name is relative to CWD
+		if ( 0 != check_file( &path[ cwd_length ] ) ) {
 			return 0;
 		}
 
 		files->add( &path[ cwd_length ], path, files );
+		total_size += stat_buffer.st_size;
+		(*c)++;
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
 		// printf( "Is DIR\n" );
@@ -328,7 +306,7 @@ int iterate( const char* path ) {
 				print_error( "Path name is too long" );
 			}
 
-			iterate( item_name );
+			iterate( item_name, c );
 		}
 
 		closedir( dir );
@@ -484,10 +462,6 @@ int save_config() {
 		return 1;
 	}
 
-	// printf( "Include_dir: %p\n", include_dir );
-	// printf( "Current: %p\n", include_dir->current );
-	// printf( "First: %p\n", include_dir->first );
-
 	write_config_section( "include_dir", tc, include_dir );
 	write_config_section( "include_file", tc, include_file );
 	write_config_section( "include_regexp", tc, include_regexp );
@@ -639,7 +613,8 @@ int show_commands() {
 		"%2d - Delete excluded regexp\n"
 
 		"%2d - Iterate over FS\n"
-		"%2d - Print files"
+		"%2d - Print files\n"
+		"%2d - Print configurations\n"
 
 		"Make your choice > ",
 
@@ -661,7 +636,8 @@ int show_commands() {
 		C_DEL_EXCL_REGEXP,
 
 		C_ITERATE,
-		C_PRINT_FILES
+		C_PRINT_FILES,
+		C_PRINT_CONFIG
 	);
 }
 
@@ -672,8 +648,6 @@ int confirmed_operation() {
 		break;
 	case C_DEL_INCL_FOLDER:
 		remove_from_config( include_dir );
-		printf( "New contents\n" );
-		include_dir->print( include_dir );
 		break;
 	case C_ADD_INCL_FILE:
 		add_to_config( include_file );
@@ -808,8 +782,8 @@ int check_file( const char *name ) {
 	if ( NULL != pos ) {
 		*pos = '\0';
 
-		collide_legth( dir, include_dir, &max_incl_dir );
-		collide_legth( dir, exclude_dir, &max_excl_dir );
+		collide_length( dir, include_dir, &max_incl_dir );
+		collide_length( dir, exclude_dir, &max_excl_dir );
 		
 		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
 			return 0;
@@ -819,10 +793,17 @@ int check_file( const char *name ) {
 			return 1;
 		}
 	}
+
+	if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
+		return 0;
+	}
+
+	return 1;
 }
 
 int collide_length( const char *name, struct llist *l, int *max ) {
 	int span = 0;
+	int cur_str_len = 0;
 
 	*max = 0;
 
@@ -830,11 +811,21 @@ int collide_length( const char *name, struct llist *l, int *max ) {
 		l->current = l->first;
 
 		while ( l->current ) {
-			collide_span( l->current->name, name, &span );
+			cur_str_len = strlen( l->current->value );
 
-			if ( span > *max ) {
-				*max = span;
+			if ( span > cur_str_len ) {
+				continue;
 			}
+
+			if( 0 == collide_span( name, l->current->value ) ) {
+				span = cur_str_len;
+
+				if ( span > *max ) {
+					*max = span;
+				}
+			}
+
+			l->current = l->current->next;
 		}
 
 		l->current = l->first;
@@ -843,20 +834,121 @@ int collide_length( const char *name, struct llist *l, int *max ) {
 	return 0;
 }
 
-int collide_span( const char *h, const char *n, int *s ) {
+int collide_span( const char *h, const char *n ) {
 	int i;
+	int c = 0;
 	int nl = strlen( n );
+	int hl = strlen( h );
 
-	*s = 0;
-
-	if ( nl <= strlen( hl ) ) {
+	if ( hl >= nl ) {
 		for( i = 0; i < nl; i++ ) {
 			if ( h[ i ] == n[ i ] ) {
-				*s++;
+				c++;
 
 			} else {
 				break;
 			}
+		}
+	}
+
+	return c == nl ? 0 : 1;
+}
+
+int match( const char* str, const char* pattern, int flags ) {
+	regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
+	flags |= REG_EXTENDED | REG_NOSUB;
+	int status;
+
+	if ( NULL == compilled ) {
+		print_error( "Failed to locate memory for regex_t structure" );
+	}
+
+	status = regcomp( compilled, pattern, flags );
+
+	if ( 0 != status ) {
+		print_error( get_regerror( status, compilled ) );
+	}
+
+	status =  regexec ( compilled, str, 0, NULL, 0 );
+
+	if ( REG_ESPACE == status ) {
+		print_error( get_regerror( status, compilled ) );
+	}
+
+	regfree( compilled );
+	free( compilled );
+
+	return status;
+}
+
+char *get_regerror ( int errcode, regex_t *compiled ) {
+	size_t length = regerror ( errcode, compiled, NULL, 0 );
+	char *buffer = malloc ( length );
+
+	if ( NULL == buffer ) {
+		print_error( "Failed to allocate memory for regular expression error message" );
+	}
+
+	( void )regerror ( errcode, compiled, buffer, length );
+
+	return buffer;
+}
+
+int check_regexp( const char* str, struct llist* l ) {
+	if ( l->first ) {
+		l->current = l->first;
+
+		while ( l->current ) {
+			if ( 0 == match( str, l->current->value, 0 ) ) {
+				return 0;
+			}
+
+			l->current = l->current->next;
+		}
+
+		l->current = l->first;
+	}
+
+	return 1;
+}
+
+void start_clock() {
+    st_time = times( &st_cpu );
+}
+
+void end_clock( char *msg ) {
+    en_time = times( &en_cpu );
+
+    if ( clockticks == 0 ) {
+    	if ( 0 > ( clockticks = sysconf( _SC_CLK_TCK ) ) ) {
+    		print_error( "Failed to fetch system clock ticks" );
+    	}
+    }
+
+    printf( "%s\n", msg );
+    printf(
+    	"Real Time: %7.2f, User Time %7.2f, System Time %7.2f\n",
+        ( en_time - st_time ) / (float)clockticks,
+        ( en_cpu.tms_utime - st_cpu.tms_utime ) / (float)clockticks,
+        ( en_cpu.tms_stime - st_cpu.tms_stime ) / (float)clockticks
+    );
+}
+
+int print_config() {
+	FILE *stream = fopen( config_name, "r" );
+	char buffer[ MAX_LINE ];
+
+	if ( NULL != stream ) {
+		while ( NULL != fgets( buffer, MAX_LINE, stream ) ) {
+			if ( EOF == fputs( buffer, stdout ) ) {
+				perror( "Print configuration" );
+				exit( 1 );
+			}
+		}
+
+		if ( ferror( stream ) ) {
+			perror( "Print configuration" );
+			exit( 1 );
 		}
 	}
 

@@ -9,6 +9,9 @@
 #include <errno.h>
 #include <yaml.h>
 #include <signal.h>
+#include <regex.h>
+#include <time.h>
+#include <sys/times.h>
 
 #include "error.h"
 #include "args.h"
@@ -16,7 +19,7 @@
 #include "structure.h"
 
 int usage( void );
-int iterate( const char* );
+int iterate( const char*, int* );
 int parse_config( void );
 int save_config( void );
 int add_to( const char* );
@@ -34,7 +37,13 @@ int write_config_section( char*, FILE*, struct llist* );
 void int_handler( int );
 int check_file( const char* );
 int collide_length( const char*, struct llist*, int* );
-int collide_span( const char*, const char*, int* );
+int collide_span( const char*, const char* );
+char* get_regerror( int, regex_t* );
+int match( const char*, const char*, int );
+int check_regexp( const char*, struct llist* );
+void start_clock( void );
+void end_clock( char* );
+int print_config( void );
 
 #define MAX_LINE 200
 
@@ -53,7 +62,8 @@ enum COMMANDS {
 	C_DEL_EXCL_REGEXP,
 	C_SET_NAME,
 	C_ITERATE,
-	C_PRINT_FILES
+	C_PRINT_FILES,
+	C_PRINT_CONFIG
 };
 
 typedef void Sigfunc( int );
