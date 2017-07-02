@@ -27,6 +27,9 @@ struct llist
 			*include_regexp,
 			*exclude_regexp,
 			*temp;
+struct winsize win_size;
+
+regmatch_t m[ REGEX_MATCH_COUNT ];
 
 static clock_t st_time;
 static clock_t en_time;
@@ -40,6 +43,9 @@ int main( int argc, char **argv ) {
 	int files_count;
 
 	signal( SIGINT, &int_handler );
+	signal( SIGWINCH, &sig_winch );
+
+	set_winsize();
 
 	include_dir = init_llist();
 	exclude_dir = init_llist();
@@ -167,7 +173,7 @@ int main( int argc, char **argv ) {
 				printf( "Total size: %ld\n", total_size );
 				break;
 			case C_PRINT_FILES:
-				files->print( files );
+				print_files();
 				break;
 			case C_PRINT_CONFIG:
 				print_config();
@@ -259,6 +265,8 @@ int usage() {
 }
 
 int iterate( const char* path, int* c ) {
+	if ( DEBUG )fprintf( stderr, "Iterate: '%s'\n", path );
+
 	DIR* dir;
 	struct dirent* item;
 	char item_name[ path_max_size ];
@@ -269,9 +277,12 @@ int iterate( const char* path, int* c ) {
 	}
 
 	if ( S_ISREG( stat_buffer.st_mode ) ) {
+
+		if ( DEBUG )fprintf( stderr, "Is file\n" );
 		
 		// Path name is relative to CWD
 		if ( 0 != check_file( &path[ cwd_length ] ) ) {
+			if ( DEBUG )fprintf( stderr, "Passed check\n" );
 			return 0;
 		}
 
@@ -280,16 +291,14 @@ int iterate( const char* path, int* c ) {
 		(*c)++;
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
-		// printf( "Is DIR\n" );
-		// printf( "Path: %s\n", path );
+		if ( DEBUG )fprintf( stderr, "Is folder\n" );
+
 		if ( NULL == ( dir = opendir( path ) ) ) {
 			perror( "Opendir error" );
 			return 1;
 		}
 
 		depth++;
-
-		// printf( "Open DIR\n" );
 
 		while ( NULL != ( item = readdir( dir ) ) ) {
 			if ( item->d_name[ 0 ] == '.' ) {
@@ -311,6 +320,11 @@ int iterate( const char* path, int* c ) {
 
 		closedir( dir );
 		depth--;
+	}
+
+	// Collect dependencies only when we done with files collection
+	if ( 0 == depth ) {
+		load_dependencies();
 	}
 }
 
@@ -594,7 +608,11 @@ int del_from( const char *name, struct llist* l ) {
 }
 
 int show_commands() {
+	char *line = malloc( win_size.ws_col + 1 );
+	memset( line, '-', win_size.ws_col );
+
 	printf(
+		"%s\n" /* separator */
 		"%2d - Set module name\n"
 
 		"%2d - Add included directories\n"
@@ -615,8 +633,11 @@ int show_commands() {
 		"%2d - Iterate over FS\n"
 		"%2d - Print files\n"
 		"%2d - Print configurations\n"
+		"%s\n" /* Separator */
 
 		"Make your choice > ",
+
+		line,
 
 		C_SET_NAME,
 
@@ -637,8 +658,12 @@ int show_commands() {
 
 		C_ITERATE,
 		C_PRINT_FILES,
-		C_PRINT_CONFIG
+		C_PRINT_CONFIG,
+
+		line
 	);
+
+	free( line );
 }
 
 int confirmed_operation() {
@@ -760,6 +785,8 @@ void int_handler( int s ) {
 }
 
 int check_file( const char *name ) {
+	if ( DEBUG )fprintf( stderr, "Start checking file: '%s'\n", name );
+
 	char dir[ path_max_size ];
 	char *pos;
 
@@ -768,11 +795,13 @@ int check_file( const char *name ) {
 
 	// File is in the include list
 	if ( 0 == include_file->has_value( name, include_file ) ) {
+		if ( DEBUG )fprintf( stderr, "Is in included files list\n" );
 		return 0;
 	}
 
 	// File is in the exclude list
 	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
+		if ( DEBUG )fprintf( stderr, "Is in excluded files list\n" );
 		return 1;
 	}
 
@@ -782,14 +811,20 @@ int check_file( const char *name ) {
 	if ( NULL != pos ) {
 		*pos = '\0';
 
+		if ( DEBUG )fprintf( stderr, "Check as directory: '%s'\n", dir );
+
 		collide_length( dir, include_dir, &max_incl_dir );
 		collide_length( dir, exclude_dir, &max_excl_dir );
+
+		if ( DEBUG )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
 		
 		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
+			if ( DEBUG )fprintf( stderr, "Passed as directory\n");
 			return 0;
 		}
 
 		if ( max_excl_dir > 0 ) {
+			if ( DEBUG )fprintf( stderr, "Rejected as directory\n" );
 			return 1;
 		}
 	}
@@ -854,10 +889,26 @@ int collide_span( const char *h, const char *n ) {
 	return c == nl ? 0 : 1;
 }
 
-int match( const char* str, const char* pattern, int flags ) {
-	regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
-	flags |= REG_EXTENDED | REG_NOSUB;
+/**
+ * Tests if regular expression matches the pattern
+ * str - pointer to string to test
+ * pattern - pointer to the pattern
+ * m - array of regmatch_t structures
+ * Returns 0 if match succeeded
+ */
+int match( const char* str, const char* pattern, regmatch_t *m, int flags ) {
+	size_t c = NULL == m ? 0 : REGEX_MATCH_COUNT;
 	int status;
+
+	if ( DEBUG )fprintf( stderr, "Matching string '%s' against regex '%s'\n", str, pattern );
+
+	if ( IS_EMPTY( str ) || IS_EMPTY( pattern ) ) {
+		if ( DEBUG )fprintf( stderr, "One of operands is empty. Skip\n" );
+		return 0;
+	}
+
+	regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
+	flags |= REG_EXTENDED;
 
 	if ( NULL == compilled ) {
 		print_error( "Failed to locate memory for regex_t structure" );
@@ -869,7 +920,7 @@ int match( const char* str, const char* pattern, int flags ) {
 		print_error( get_regerror( status, compilled ) );
 	}
 
-	status =  regexec ( compilled, str, 0, NULL, 0 );
+	status = regexec( compilled, str, c, m, 0 );
 
 	if ( REG_ESPACE == status ) {
 		print_error( get_regerror( status, compilled ) );
@@ -877,6 +928,8 @@ int match( const char* str, const char* pattern, int flags ) {
 
 	regfree( compilled );
 	free( compilled );
+
+	if ( DEBUG )fprintf( stderr, "Match status: %d\n", status );
 
 	return status;
 }
@@ -895,11 +948,14 @@ char *get_regerror ( int errcode, regex_t *compiled ) {
 }
 
 int check_regexp( const char* str, struct llist* l ) {
+	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regexp\n", str );
 	if ( l->first ) {
 		l->current = l->first;
 
 		while ( l->current ) {
-			if ( 0 == match( str, l->current->value, 0 ) ) {
+			if ( DEBUG )fprintf( stderr, "Regexp: '%s'\n", l->current->value );
+			if ( match( str, l->current->value, NULL, 0 ) == 0 ) {
+				if ( DEBUG )fprintf( stderr, "Match\n" );
 				return 0;
 			}
 
@@ -907,7 +963,12 @@ int check_regexp( const char* str, struct llist* l ) {
 		}
 
 		l->current = l->first;
+
+	} else {
+		if ( DEBUG )fprintf( stderr, "Regex list is empty\n" );
 	}
+
+	if ( DEBUG )fprintf( stderr, "No match found\n" );
 
 	return 1;
 }
@@ -953,5 +1014,192 @@ int print_config() {
 	}
 
 	return 0;
+}
+
+int print_files() {
+	if ( NULL == files->first ) {
+		printf( "Lust is empty\n" );
+	} else {
+		files->current = files->first;
+
+		while ( files->current ) {
+			printf( "[%3d] - %s\n", files->current->index, files->current->name );
+			files->current = files->current->next;
+		}
+
+		files->current = files->first;
+	}
+
+	return 0;
+}
+
+static void set_winsize() {
+	if ( 0 == isatty( STDIN_FILENO ) ) {
+		print_error( "STDIN is not a terminal device" );
+	}
+
+	if ( ioctl( STDIN_FILENO, TIOCGWINSZ, ( char * ) &win_size ) < 0 ) {
+		print_error( "TIOCGWINSZ error" );
+	}
+
+	// printf( "%d rows, %d columns\n", win_size.ws_row, win_size.ws_col );
+}
+
+static void sig_winch( int signo ) {
+	set_winsize();
+}
+
+int load_dependencies() {
+	if ( DEBUG )fprintf( stderr, "Start loading dependencies\n" );
+
+	FILE *f;
+	char line[ path_max_size ];
+	char name[ path_max_size ];
+	int max_line = 100; // Max depth to look at
+	int in_header = 0;
+	int c = 0; // Line count
+
+	// Files not empty
+	if ( files->first ) {
+		files->current = files->first;
+
+		while ( files->current ) {
+			if ( DEBUG )fprintf( stderr, "Iterate: '%s'\n", files->current->name );
+
+			// Look for sources in controller files
+			if ( match( files->current->name, "/controller/", NULL, 0 ) == 0 ) {
+				if ( DEBUG )fprintf( stderr, "Is controller\n" );
+
+				if ( NULL == ( f = fopen( files->current->value, "r" ) ) ) {
+					print_error( "Failed to open file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) );
+				}
+
+				if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", files->current->value );
+
+				// Read up to max_line lines
+				while ( NULL != ( fgets( line, MAX_LINE, f ) ) ) {
+					if ( DEBUG )fprintf( stderr, "Line: %s", line );
+
+					if ( c > max_line ) {
+						fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_line, files->current->value );
+						goto next;
+					}
+
+					if ( in_header ) {
+						if ( 0 == strncmp( ltrim( line, NULL ), "*/", 2 ) ) {
+							if ( DEBUG )fprintf( stderr, "Header close tag\n" );
+							goto next;
+						}
+
+						// if ( )
+						// if ( DEBUG )fprintf( stderr, "Found match: '%s'\n", m );
+
+					} else {
+						if ( 0 == strncmp( ltrim( line, NULL ), "/**", 3 ) ) {
+							if ( DEBUG )fprintf( stderr, "Header close tag\n" );
+							in_header = 1;
+							continue;
+						}
+					}
+
+					c++;
+				}
+
+				if ( ferror( f ) ) {
+					print_error( "Failed to read file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) );
+				}
+
+			next:
+				fclose( f );
+				in_header = 0;
+			}
+
+			files->current = files->current->next;
+		}
+
+	} else {
+		if ( DEBUG )fprintf( stderr, "Files list is empty\n" );
+	}
+}
+
+char *trim( char *str, char *ch ) {
+	if( NULL != rtrim( str, ch ) )
+		ltrim( str, ch );
+
+	return str;
+}
+
+char *ltrim( char *str, char *ch ) {
+	int len = strlen( str );
+	int ch_len = 0;
+	int i = 0;
+	int y = 0;
+	int flag = 1;
+
+	if ( IS_EMPTY( str ) )return 0;
+
+	if ( NULL != ch ) {
+		ch_len = strlen( ch );
+	}
+
+	for( i = 0; i < len && flag; i++ ) {
+		flag = 0;
+
+		if ( NULL == ch ) {
+			if ( str[ i ] == ' ' ) {
+				flag = 1;
+			}
+
+		} else {
+			for ( y = 0; y < ch_len; y++ ) {
+				if ( str[ i ] == ch[ y ] ) {
+					flag = 1;
+					break;
+				}
+			}
+		}
+	}
+
+	strcpy( str, &str[ i - 1 ] );
+
+	return str;
+}
+
+char *rtrim( char *str, char *ch ) {
+	int len = strlen( str );
+	int ch_len = 0;
+	int i = 0;
+	int y = 0;
+	int flag = 1;
+	char *p;
+
+	if ( IS_EMPTY( str ) )return 0;
+
+	if ( NULL != ch ) {
+		ch_len = strlen( ch );
+	}
+
+	;
+	for( p = &str[ len -1 ]; len >= 0 && flag; len--, p-- ) {
+		flag = 0;
+
+		if ( NULL == ch ) {
+			if ( *p == ' ' ) {
+				flag = 1;
+			}
+
+		} else {
+			for ( y = 0; y < ch_len; y++ ) {
+				if ( *p == ch[ y ] ) {
+					flag = 1;
+					break;
+				}
+			}
+		}
+	}
+
+	*( p + 2 ) = '\0';
+
+	return p;
 }
 
