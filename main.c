@@ -15,6 +15,7 @@ int config_is_dirty = 0;
 int wait_confirm = 0;
 int save_me = 0;
 int cwd_length = 0;
+int files_count;
 
 size_t path_max_size;
 
@@ -40,7 +41,8 @@ static struct tms en_cpu;
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
-	int files_count;
+	getcwd( cwd, path_max_size );
+	cwd_length = strlen( cwd );
 
 	signal( SIGINT, &int_handler );
 	signal( SIGWINCH, &sig_winch );
@@ -162,12 +164,11 @@ int main( int argc, char **argv ) {
 				break;
 			case C_ITERATE:
 				files->empty( files );
-				getcwd( cwd, path_max_size );
-				cwd_length = strlen( cwd );
 				files_count = 0;
 				total_size = 0;
 				start_clock();
-				iterate( cwd, &files_count );
+				iterate( cwd, &check_item, NULL, NULL );
+				load_dependencies();
 				end_clock( "Time:" );
 				printf("%d files was selected\n", files_count );
 				printf( "Total size: %ld\n", total_size );
@@ -264,41 +265,135 @@ int usage() {
 	exit( 0 );
 }
 
-int iterate( const char* path, int* c ) {
-	if ( DEBUG )fprintf( stderr, "Iterate: '%s'\n", path );
+// int iterate(  char* path ) {
+// 	if ( DEBUG )fprintf( stderr, "Iterate: '%s'\n", path );
+
+// 	DIR* dir;
+// 	struct dirent* item;
+// 	char item_name[ path_max_size ];
+// 	struct stat stat_buffer;
+
+// 	if ( lstat( path, &stat_buffer ) < 0 ) {
+// 		return 1;
+// 	}
+
+// 	if ( S_ISREG( stat_buffer.st_mode ) ) {
+
+// 		if ( DEBUG )fprintf( stderr, "Is file\n" );
+
+// 		if ( path[ 0 ] == '/' ) {
+
+// 			// Absolute path
+// 			if ( 0 != check_file( &path[ cwd_length ] ) ) {
+// 				if ( DEBUG )fprintf( stderr, "Passed check\n" );
+// 				return 0;
+// 			}
+
+// 		} else {
+// 			if ( 0 != check_file( path ) ) {
+// 				if ( DEBUG )fprintf( stderr, "Passed check\n" );
+// 				return 0;
+// 			}
+// 		}
+		
+
+// 		files->add( &path[ cwd_length ], path, files );
+// 		total_size += stat_buffer.st_size;
+// 		files_count++;
+
+// 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
+// 		if ( DEBUG )fprintf( stderr, "Is folder\n" );
+
+// 		if ( NULL == ( dir = opendir( path ) ) ) {
+// 			perror( "Opendir error" );
+// 			return 1;
+// 		}
+
+// 		depth++;
+
+// 		while ( NULL != ( item = readdir( dir ) ) ) {
+// 			if ( item->d_name[ 0 ] == '.' ) {
+// 				continue;
+// 			}
+
+// 			strncpy( item_name, path, path_max_size );
+
+// 			if ( strlen( item_name ) + 2 + strlen( item->d_name ) < path_max_size ) {
+// 				strcat( item_name, "/" );
+// 				strcat( item_name, item->d_name );
+
+// 			} else {
+// 				print_error( "Path name is too long" );
+// 			}
+
+// 			iterate( item_name );
+// 		}
+
+// 		closedir( dir );
+// 		depth--;
+
+// 	} else {
+// 		print_error( "%s is not a file nor a directory\n", path );
+// 	}
+// }
+
+int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
+	int debug = 0;
+
+	if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", path );
 
 	DIR* dir;
 	struct dirent* item;
 	char item_name[ path_max_size ];
 	struct stat stat_buffer;
+	char tmp_name[ path_max_size ];
+	memset( tmp_name, '\0', path_max_size );
 
 	if ( lstat( path, &stat_buffer ) < 0 ) {
+		if ( NULL != err_c ) {
+			(*err_c)( path, &stat_buffer );
+		}
+
 		return 1;
 	}
 
 	if ( S_ISREG( stat_buffer.st_mode ) ) {
+		if ( DEBUG || debug )fprintf( stderr, "Is file\n" );
 
-		if ( DEBUG )fprintf( stderr, "Is file\n" );
-		
-		// Path name is relative to CWD
-		if ( 0 != check_file( &path[ cwd_length ] ) ) {
-			if ( DEBUG )fprintf( stderr, "Passed check\n" );
+		if ( path[ 0 ] == '/' ) {
+			if ( DEBUG || debug )fprintf( stderr, "Absolute path\n" );
+			strncpy( tmp_name, path, path_max_size );
+			tmp_name[ path_max_size ] = '\0';
+
+		} else {
+			if ( DEBUG || debug )fprintf( stderr, "Relative path\n" );
+			strncpy( tmp_name, cwd, cwd_length );
+			tmp_name[ cwd_length ] = '/';
+			strcat( tmp_name, path );
+			tmp_name[ strlen( tmp_name ) ] = '\0';
+		}
+
+		if ( DEBUG || debug )fprintf( stderr, "Resulting path: %s\n", tmp_name );
+
+		if ( NULL != file_c && 0 == (*file_c)( tmp_name, &stat_buffer ) ) {
 			return 0;
 		}
 
-		files->add( &path[ cwd_length ], path, files );
-		total_size += stat_buffer.st_size;
-		(*c)++;
-
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
-		if ( DEBUG )fprintf( stderr, "Is folder\n" );
+		if ( DEBUG || debug )fprintf( stderr, "Is folder\n" );
 
 		if ( NULL == ( dir = opendir( path ) ) ) {
 			perror( "Opendir error" );
 			return 1;
 		}
 
+		if ( DEBUG || debug )fprintf( stderr, "Dir has been entered: %s\n", path );
+
 		depth++;
+
+		if ( NULL != dir_c && 0 == (*dir_c)( path, &stat_buffer ) ) {
+			return 0;
+		}
 
 		while ( NULL != ( item = readdir( dir ) ) ) {
 			if ( item->d_name[ 0 ] == '.' ) {
@@ -315,17 +410,44 @@ int iterate( const char* path, int* c ) {
 				print_error( "Path name is too long" );
 			}
 
-			iterate( item_name, c );
+			iterate( item_name, file_c, dir_c, err_c );
 		}
 
 		closedir( dir );
 		depth--;
+
+	} else {
+		print_error( "%s is not a file nor a directory\n", path );
 	}
 
-	// Collect dependencies only when we done with files collection
-	if ( 0 == depth ) {
-		load_dependencies();
+	return 0;
+}
+
+int check_item(  char *name, struct stat* sb ) {
+	if ( DEBUG )fprintf( stderr, "Start checking item %s\n", name );
+
+	if ( 0 == check_file( &name[ cwd_length + 1 ] ) ) {
+		if ( DEBUG )fprintf( stderr, "Passed check\n" );
+
+		files->add( &name[ cwd_length + 1 ], name, files );
+		total_size += sb->st_size;
+		files_count++;
+
+	} else {
+		if ( DEBUG )fprintf( stderr, "Failed check\n" );
 	}
+
+	return 0;
+}
+
+int check_source(  char *name, struct stat* sb ) {
+	int debug = 0;
+
+	if ( DEBUG || debug )fprintf( stderr, "Add source file %s\n", name );
+
+	files->add( &name[ cwd_length  +1 ], name, files );
+	total_size += sb->st_size;
+	files_count++;
 }
 
 int parse_config( void ) {
@@ -584,7 +706,7 @@ int start_add( struct llist* l ) {
 	return 0;
 }
 
-int add_to( const char *item ) {
+int add_to(  char *item ) {
 	if ( NULL != temp ) {
 		printf( "Add item >> " );
 		return temp->add( NULL, item, temp );
@@ -595,7 +717,7 @@ int add_to( const char *item ) {
 	return 1;
 }
 
-int del_from( const char *name, struct llist* l ) {
+int del_from(  char *name, struct llist* l ) {
 	if ( NULL != temp ) {
 		temp->add( NULL, name, temp );
 		printf( "\033[%dA", l->count( l ) + 1 );
@@ -784,8 +906,10 @@ void int_handler( int s ) {
 	}
 }
 
-int check_file( const char *name ) {
-	if ( DEBUG )fprintf( stderr, "Start checking file: '%s'\n", name );
+int check_file(  char *name ) {
+	int debug = 0;
+
+	if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
 
 	char dir[ path_max_size ];
 	char *pos;
@@ -795,13 +919,13 @@ int check_file( const char *name ) {
 
 	// File is in the include list
 	if ( 0 == include_file->has_value( name, include_file ) ) {
-		if ( DEBUG )fprintf( stderr, "Is in included files list\n" );
+		if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
 		return 0;
 	}
 
 	// File is in the exclude list
 	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
-		if ( DEBUG )fprintf( stderr, "Is in excluded files list\n" );
+		if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
 		return 1;
 	}
 
@@ -811,32 +935,38 @@ int check_file( const char *name ) {
 	if ( NULL != pos ) {
 		*pos = '\0';
 
-		if ( DEBUG )fprintf( stderr, "Check as directory: '%s'\n", dir );
+		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
 
 		collide_length( dir, include_dir, &max_incl_dir );
 		collide_length( dir, exclude_dir, &max_excl_dir );
 
-		if ( DEBUG )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
+		if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
 		
 		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
-			if ( DEBUG )fprintf( stderr, "Passed as directory\n");
+			if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
 			return 0;
 		}
 
 		if ( max_excl_dir > 0 ) {
-			if ( DEBUG )fprintf( stderr, "Rejected as directory\n" );
+			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
 			return 1;
 		}
 	}
 
+	if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
+
 	if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
+		if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
+
 		return 0;
 	}
+
+	if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
 
 	return 1;
 }
 
-int collide_length( const char *name, struct llist *l, int *max ) {
+int collide_length(  char *name, struct llist *l, int *max ) {
 	int span = 0;
 	int cur_str_len = 0;
 
@@ -869,7 +999,7 @@ int collide_length( const char *name, struct llist *l, int *max ) {
 	return 0;
 }
 
-int collide_span( const char *h, const char *n ) {
+int collide_span(  char *h,  char *n ) {
 	int i;
 	int c = 0;
 	int nl = strlen( n );
@@ -896,7 +1026,7 @@ int collide_span( const char *h, const char *n ) {
  * m - array of regmatch_t structures
  * Returns 0 if match succeeded
  */
-int match( const char* str, const char* pattern, regmatch_t *m, int flags ) {
+int match(  char* str,  char* pattern, regmatch_t *m, int flags ) {
 	size_t c = NULL == m ? 0 : REGEX_MATCH_COUNT;
 	int status;
 
@@ -947,7 +1077,7 @@ char *get_regerror ( int errcode, regex_t *compiled ) {
 	return buffer;
 }
 
-int check_regexp( const char* str, struct llist* l ) {
+int check_regexp(  char* str, struct llist* l ) {
 	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regexp\n", str );
 	if ( l->first ) {
 		l->current = l->first;
@@ -1050,7 +1180,9 @@ static void sig_winch( int signo ) {
 }
 
 int load_dependencies() {
-	if ( DEBUG )fprintf( stderr, "Start loading dependencies\n" );
+	int debug = 1;
+
+	if ( DEBUG || debug )fprintf( stderr, "Start loading dependencies\n" );
 
 	FILE *f;
 	char line[ path_max_size ];
@@ -1058,17 +1190,20 @@ int load_dependencies() {
 	int max_line = 100; // Max depth to look at
 	int in_header = 0;
 	int c = 0; // Line count
+	char *patt = "\\*\\s+@source\\s+([^*]+)"; // Regex pattern to match source against
+	int reg_len;
 
 	// Files not empty
 	if ( files->first ) {
 		files->current = files->first;
 
 		while ( files->current ) {
-			if ( DEBUG )fprintf( stderr, "Iterate: '%s'\n", files->current->name );
+			if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", files->current->name );
+
 
 			// Look for sources in controller files
 			if ( match( files->current->name, "/controller/", NULL, 0 ) == 0 ) {
-				if ( DEBUG )fprintf( stderr, "Is controller\n" );
+				if ( DEBUG || debug )fprintf( stderr, "Is controller\n" );
 
 				if ( NULL == ( f = fopen( files->current->value, "r" ) ) ) {
 					print_error( "Failed to open file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) );
@@ -1078,7 +1213,7 @@ int load_dependencies() {
 
 				// Read up to max_line lines
 				while ( NULL != ( fgets( line, MAX_LINE, f ) ) ) {
-					if ( DEBUG )fprintf( stderr, "Line: %s", line );
+					if ( DEBUG || debug )fprintf( stderr, "Line: %s", line );
 
 					if ( c > max_line ) {
 						fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_line, files->current->value );
@@ -1086,17 +1221,31 @@ int load_dependencies() {
 					}
 
 					if ( in_header ) {
-						if ( 0 == strncmp( ltrim( line, NULL ), "*/", 2 ) ) {
-							if ( DEBUG )fprintf( stderr, "Header close tag\n" );
+						trim( line, NULL );
+
+						if ( 0 == strncmp( line, "*/", 2 ) ) {
+							if ( DEBUG || debug )fprintf( stderr, "Header closeing tag\n" );
 							goto next;
 						}
 
-						// if ( )
-						// if ( DEBUG )fprintf( stderr, "Found match: '%s'\n", m );
+						if ( 0 == match( line, patt, m, 0 ) ) {
+							if ( -1 != m[ 1 ].rm_so ) {
+								reg_len = m[ 1 ].rm_eo - m[ 1 ].rm_so - 1;
+								strncpy( line, &line[ m[ 1 ].rm_so ], reg_len );
+								line[ reg_len ] = '\0';
+								if ( DEBUG || debug )fprintf( stderr, "Got source: %s\n", line );
+
+								iterate( line, check_source, NULL, NULL );
+
+							} else {
+								fprintf( stderr, "Error while matching string '%s' against regex '%s'\n", line, patt );
+								exit( 1 );
+							}
+						}
 
 					} else {
 						if ( 0 == strncmp( ltrim( line, NULL ), "/**", 3 ) ) {
-							if ( DEBUG )fprintf( stderr, "Header close tag\n" );
+							if ( DEBUG || debug )fprintf( stderr, "Header opening tag\n" );
 							in_header = 1;
 							continue;
 						}
@@ -1114,29 +1263,28 @@ int load_dependencies() {
 				in_header = 0;
 			}
 
+			if ( DEBUG || debug )fprintf( stderr, "Next loop\n" );
+			if ( DEBUG || debug )fprintf( stderr, "Next item: %p\n", files->current->next );
 			files->current = files->current->next;
 		}
 
 	} else {
-		if ( DEBUG )fprintf( stderr, "Files list is empty\n" );
+		if ( DEBUG || debug )fprintf( stderr, "Files list is empty\n" );
 	}
 }
 
-char *trim( char *str, char *ch ) {
-	if( NULL != rtrim( str, ch ) )
-		ltrim( str, ch );
-
-	return str;
+char *trim( char *str,  char *ch ) {
+	return ltrim( rtrim( str, ch ), ch );
 }
 
-char *ltrim( char *str, char *ch ) {
+char *ltrim( char *str,  char *ch ) {
 	int len = strlen( str );
 	int ch_len = 0;
 	int i = 0;
 	int y = 0;
 	int flag = 1;
 
-	if ( IS_EMPTY( str ) )return 0;
+	if ( IS_EMPTY( str ) )return str;
 
 	if ( NULL != ch ) {
 		ch_len = strlen( ch );
@@ -1146,7 +1294,7 @@ char *ltrim( char *str, char *ch ) {
 		flag = 0;
 
 		if ( NULL == ch ) {
-			if ( str[ i ] == ' ' ) {
+			if ( str[ i ] == ' ' || str[ i ] == '\n' || str[ i ] == '\t' ) {
 				flag = 1;
 			}
 
@@ -1160,12 +1308,14 @@ char *ltrim( char *str, char *ch ) {
 		}
 	}
 
-	strcpy( str, &str[ i - 1 ] );
+	i--;
+	strncpy( str, &str[ i ], len - i );
+	str[ len - i ] = '\0';
 
 	return str;
 }
 
-char *rtrim( char *str, char *ch ) {
+char *rtrim( char *str,  char *ch ) {
 	int len = strlen( str );
 	int ch_len = 0;
 	int i = 0;
@@ -1173,18 +1323,17 @@ char *rtrim( char *str, char *ch ) {
 	int flag = 1;
 	char *p;
 
-	if ( IS_EMPTY( str ) )return 0;
+	if ( IS_EMPTY( str ) )return str;
 
 	if ( NULL != ch ) {
 		ch_len = strlen( ch );
 	}
 
-	;
 	for( p = &str[ len -1 ]; len >= 0 && flag; len--, p-- ) {
 		flag = 0;
 
 		if ( NULL == ch ) {
-			if ( *p == ' ' ) {
+			if ( *p == ' ' || *p == '\n' || *p == '\t' ) {
 				flag = 1;
 			}
 
@@ -1200,6 +1349,26 @@ char *rtrim( char *str, char *ch ) {
 
 	*( p + 2 ) = '\0';
 
-	return p;
+	return str;
+}
+
+int is_file(  char *name ) {
+	struct stat stat_buffer;
+
+	if ( lstat( name, &stat_buffer ) < 0 ) {
+		return 0;
+	}
+
+	return  S_ISREG( stat_buffer.st_mode );
+}
+
+int is_dir(  char *name ) {
+	struct stat stat_buffer;
+
+	if ( lstat( name, &stat_buffer ) < 0 ) {
+		return 0;
+	}
+
+	return  S_ISDIR( stat_buffer.st_mode );
 }
 
