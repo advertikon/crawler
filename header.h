@@ -16,6 +16,7 @@
 #ifndef TIOCGWINSZ
 #include <sys/ioctl.h>
 #endif
+#include <sys/wait.h>
 
 #include "error.h"
 #include "args.h"
@@ -25,7 +26,7 @@
 typedef void Sigfunc( int );
 typedef int It_file(  char*, struct stat* );
 typedef int It_dir(  char*, struct stat* );
-typedef int It_error(  char*, struct stat* );
+typedef int It_error(  char* );
 
 int usage( void );
 int iterate(  char*, It_file*, It_dir*, It_error* );
@@ -64,6 +65,11 @@ int is_file(  char* );
 int is_dir(  char* );
 int check_item( char*, struct stat* );
 int check_source( char*, struct stat* );
+int on_iterate_error( char* );
+char* add_cwd( char* );
+int make_package( void );
+int run_zip( void );
+void sig_cld( int );
 
 #define MAX_LINE 200
 #define DEBUG 0
@@ -87,5 +93,6 @@ enum COMMANDS {
 	C_SET_NAME,
 	C_ITERATE,
 	C_PRINT_FILES,
-	C_PRINT_CONFIG
+	C_PRINT_CONFIG,
+	C_MAKE
 };
