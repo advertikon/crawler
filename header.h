@@ -17,6 +17,7 @@
 #include <sys/ioctl.h>
 #endif
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #include "error.h"
 #include "args.h"
@@ -70,6 +71,11 @@ char* add_cwd( char* );
 int make_package( void );
 int run_zip( void );
 void sig_cld( int );
+int make_dir( char*, mode_t );
+int fill_temp_package();
+int make_file( char*, mode_t );
+char *file_name( char* );
+char *dir_name( char* );
 
 #define MAX_LINE 200
 #define DEBUG 0

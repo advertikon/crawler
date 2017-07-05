@@ -5,6 +5,8 @@ char* code;
 char* cur_input = NULL;
 char *abort_command_str = "q";
 char* config_name = ".crawler";
+char *pckg_tmp_dir = ".tpm_pckg/";
+char *upload_folder = "upload/";
 char* cwd;
 
 static int depth = 0;
@@ -183,7 +185,9 @@ int main( int argc, char **argv ) {
 				print_config();
 				break;
 			case C_MAKE:
+				start_clock();
 				make_package();
+				end_clock( "Package creation time:" );
 				break;
 			default:
 				show_commands();
@@ -520,14 +524,24 @@ int parse_config( void ) {
 int save_config() {
 	char *raw_name = "~conf";
 	char *temp_name = "~temp";
-	FILE *tc = fopen( raw_name, "w" );
+
+	int fd;
 
 	if ( 0 == config_is_dirty ) return 0;
+
+	FILE *tc = fopen( raw_name, "w" );
 
 	if ( NULL == tc ) {
 		perror( "Failed to create temporary configuration file" );
 		return 1;
 	}
+
+	if( fd = open( config_name, O_RDONLY | O_CREAT ) < 0 ) {
+		fprintf( stderr, "Failed to create configuration file: %s", strerror( errno ) );
+		exit( 1 );
+	}
+
+	close( fd );
 
 	write_config_section( "include_dir", tc, include_dir );
 	write_config_section( "include_file", tc, include_file );
@@ -1344,7 +1358,26 @@ char* add_cwd( char* path ) {
 }
 
 int make_package() {
-	run_zip();
+	int s;
+	char u_folder[ path_max_size ];
+
+	if ( NULL == files->first ) {
+		fprintf( stderr, "Files list is empty. Nothing to process\n" );
+		return 1;
+	}
+
+	memset( u_folder, '\0', path_max_size );
+	strcpy( u_folder, pckg_tmp_dir );
+	strcat( u_folder, upload_folder );
+
+	if ( ( s = make_dir( u_folder, S_IRWXU | S_IRWXG | S_IRWXO ) ) < 0 ) {
+		print_error( "Failed to create upload folder for package data: %s\n", strerror( errno ) );
+	}
+
+	fill_temp_package();
+
+
+	// run_zip();
 
 	return 0;
 }
@@ -1363,4 +1396,227 @@ int run_zip() {
 	if ( execlp( "ls", "ls", "-l", (char*)0 ) < 0 ) {
 		print_error( "Failed to excec" );
 	}
+}
+
+/**
+ * mkdir wrapper which makes directories recursively
+ * Set errno as mkdir doest it
+ * returns 0 on success -1 on error
+ */
+int make_dir( char *path, mode_t mode ) {
+	int debug = 0;
+
+	char t_path[ path_max_size ];
+	char t_cwd[ path_max_size ];
+	char *pos, *cur_pos;
+	char part[ path_max_size ];
+
+	int status = 0;
+
+	memset( t_cwd, '\0', path_max_size );
+	getcwd( t_cwd, path_max_size );
+
+	if ( '/' == path[ 0 ] ) {
+		chdir( "/" );
+	}
+
+	memset( t_path, '\0', path_max_size );
+	strncpy( t_path, path, path_max_size );
+	trim( t_path, "/" );
+
+	cur_pos = t_path;
+
+	if ( DEBUG || debug ) printf( "Makedir: Input folder: %s\n", t_path );
+
+	while ( NULL != ( pos = strchr( cur_pos, '/' ) ) ) {
+		memset( part, '\0', path_max_size );
+		strncpy( part, cur_pos, pos - cur_pos );
+		if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
+
+		if( ( status = mkdir( part, mode ) ) < 0 && errno != EEXIST ) {
+			goto out;
+		}
+
+		cur_pos = ++pos;
+		chdir( part );
+	}
+
+	// Last part (or the only one)
+	memset( part, '\0', path_max_size );
+	strncpy( part, cur_pos, &t_path[ strlen( t_path ) ] - cur_pos );
+	if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
+
+	if( ( status = mkdir( part, mode ) ) < 0 && errno == EEXIST ) {
+		status = 0;
+		errno = 0;
+	}
+
+out:
+	chdir( t_cwd );
+
+	return status;
+}
+
+int fill_temp_package() {
+	int debug = 0;
+
+	int src, dest, r_count;
+
+	char path[ path_max_size ];
+	char *buffer;
+
+	struct stat sb;
+
+	files->current = files->first;
+
+	while( files->current ) {
+		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", files->current->name );
+
+		// Get file mode to be able to preserve it
+		if ( lstat( files->current->name, &sb ) < 0 ) {
+			fprintf( stderr, "Failed to stat file '%s': %s\n", files->current->name, strerror( errno ) );
+			return 1;
+		}
+
+		buffer = malloc( sb.st_blksize );
+
+		if ( NULL == buffer ) {
+			fprintf( stderr, "fill_temp_package: Failed to allocate memory for read buffer\n" );
+			return 1;
+		}
+
+		if ( ( src = open( files->current->name, O_RDONLY  ) ) < 0 ) {
+			fprintf( stderr, "fill_temp_package: Failed to open file '%s': %s\n", files->current->name, strerror( errno ) );
+			return 1;
+		}
+
+		if ( DEBUG || debug )fprintf( stderr, "Open file '%s'\n", files->current->name );
+
+		memset( path, '\0', path_max_size );
+		strcpy( path, pckg_tmp_dir );
+		strcat( path, upload_folder );
+		strcat( path, files->current->name );
+
+		if ( DEBUG || debug )fprintf( stderr, "Creating file '%s'\n", path );
+
+		if ( ( dest = make_file( path, sb.st_mode ) ) < 0 ) {
+			fprintf( stderr, "fill_temp_package: Failed to save file '%s': %s\n", path, strerror( errno ) );
+			return 1;
+		}
+
+		if ( DEBUG || debug )fprintf( stderr, "File '%s' created\n", path );
+
+		while ( ( r_count = read( src, buffer, sb.st_blksize ) ) > 0 ) {
+			if ( -1 == write( dest, buffer, sb.st_blksize ) ) {
+				fprintf( stderr, "fill_temp_package: write file error: %s", strerror( errno ) );
+				return -1;
+			}
+		}
+
+		if ( -1 == r_count ) {
+			fprintf( stderr, "fill_temp_package: read file error: %s", strerror( errno ) );
+			return -1;
+		}
+
+		files->current = files->current->next;
+	}
+
+	return 0;
+}
+
+/**
+ * Creates file and directories structure if needed
+ * Returns file description on success, -1 on error
+ * Modifies errno variable
+ */
+int make_file( char *name, mode_t mode ) {
+	int debug = 0;
+	int fd;
+	char *d_name;
+
+	if ( DEBUG || debug )fprintf( stderr, "Creating file '%s' with mode %o\n", name, mode );
+
+	if ( ( fd = creat( name, mode ) ) < 0 &&  ENOENT == errno ) {
+		errno = 0;
+
+		if ( DEBUG || debug )fprintf( stderr, "Directories structure doesn't exist - creating structure\n" );
+
+		d_name = dir_name( name );
+
+		if ( make_dir( d_name, mode ) < 0 ) {
+			free( d_name );
+			return -1;
+		}
+
+		free( d_name );
+		fd = creat( name, mode );
+	}
+
+	return fd;
+}
+
+/**
+ * Returns last part of a string (after last slash) as a copy
+ * If no slashes are present returns copy of input string
+ * On error returns NULL
+ */
+char *file_name( char *path ) {
+	char *p;
+	char *out;
+	int len = strlen( path ) + 1;
+
+	out = malloc( len );
+
+	if ( NULL == out ) {
+		fprintf( stderr, "file_name: Failed to allocate memory\n" );
+		return NULL;
+	}
+
+	memset( out, '\0', len );
+
+	p = strrchr( path, '/' );
+
+	if ( NULL == p ) {
+		strcpy( out, path );
+
+	} else {
+		strcpy( out, ++p );
+	}
+
+	return out;
+}
+
+/**
+ * Returns path name up to the last slash as a copy
+ * If no slashes are present returns copy of input string
+ * On error returns NULL
+ */
+char *dir_name( char *path ) {
+	int debug = 0;
+
+	char *p;
+	char *out;
+	int len = strlen( path ) + 1;
+
+	out = malloc( len );
+
+	if ( NULL == out ) {
+		fprintf( stderr, "dir_name: Failed to allocate memory\n" );
+		return NULL;
+	}
+
+	memset( out, '\0', len );
+
+	p = strrchr( path, '/' );
+
+	if ( NULL == p ) {
+		strcpy( out, path );
+
+	} else {
+		strncpy( out, path, p - &path[ 0 ] );
+	}
+
+	if ( DEBUG || debug )fprintf( stderr, "Path '%s' resolved to directory name '%s'\n", path, out );
+
+	return out;
 }
