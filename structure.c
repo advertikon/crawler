@@ -6,6 +6,39 @@
 static size_t total_size = 0;
 
 static int s_add( const char *name, const char *value, struct llist* l ) {
+	int debug = 0;
+
+	if ( debug ) fprintf( stderr, "Adding string '%s' to a list\n", value );
+
+	char *t_val;
+	size_t size;
+	
+	size = strlen( value ) + 1;
+	t_val = malloc( size );
+
+	if ( NULL == t_val ) {
+		print_error( "Failed allocate memory for list value" );
+	}
+
+	strcpy( t_val, value );
+
+	if ( debug ) fprintf( stderr, "Copy value into temp variable\n", value );
+
+	if ( 0 != s_addp( name, t_val, l ) ) {
+		print_error( "Failed to add item to lost" );
+	}
+
+	l->current->is_string = 1;
+	l->size += size;
+
+	return 0;
+}
+
+static int s_addp( const char *name, void *value, struct llist* l  ) {
+	int debug = 0;
+
+	if ( debug ) fprintf( stderr, "Adding item '%s' - '%s' to a list\n", name, value );
+
 	size_t size;
 	char foo[ 100 ];
 	struct llist_item* prev = NULL;
@@ -16,12 +49,7 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 		return 1;
 	}
 
-	// printf("Add %s = %s\n", name, value );
-	// printf( "Size: %ld\n", total_size );
-
 	while( l->current ) {
-		// printf( "Current ponter: %p\n", l->current );
-		// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
 		prev = l->current;
 		l->current = l->current->next;
 	}
@@ -44,11 +72,8 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 	} else {
 		l->current->index = 0;
 	}
-	// printf( "Allocated %ld bytes for structure, address: %p\n", sizeof( LLI ), l->current );
-	// printf( "Contents: %s\n", strncpy( foo, l->current, 100 ) );
 
 	if ( NULL == name ) {
-		// printf( "Index: %d\n", l->current->index );
 		sprintf( foo, "%d", l->current->index );
 		size = strlen( foo ) + 1;
 		l->current->name = (char*)malloc( size );
@@ -69,36 +94,14 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 
 		strncpy( l->current->name, name, size );
 	}
-	
-	// printf("there\n");
-	// printf( "Allocated %ld bytes for name, address: %p\n", size + 1 , l->current->name );
+
 	l->size += size;
-
-	// if ( l->current->name[ strlen( l->current->name ) - 1 ] != '\0' ) {
-	// 	strcat( l->current->name, "\0" );
-	// }
-
-	size = strlen( value ) + 1;
-	l->current->value = (char*)malloc( size );
-
-	if ( NULL == l->current->value ) {
-		print_error( "Failed allocate memory for list value" );
-	}
-
-	// printf( "Allocated %ld bytes for value, address: %p\n", size + 1 , l->current->value );
-	l->size += size;
-	strncpy( l->current->value, value, size );
-
-	// if ( l->current->value[ strlen( l->current->value) - 1 ] != '\0' ) {
-	// 	strcat( l->current->value, "\0" );
-	// }
+	l->current->value = value;
+	l->current->is_string = 0;
 
 	if ( NULL == l->first ) {
-		// printf( "First to current" );
 		l->first = l->current;
 	}
-
-	// printf( "Exit add\n" );
 
 	return 0;
 }
@@ -153,7 +156,7 @@ static int s_has_value( const char *value, struct llist* l ) {
 
 	l->current = l->first;
 
-	while ( l->current && l->current->name ) {
+	while ( l->current && l->current->name && l->current->is_string ) {
 		if ( !strcmp( l->current->value, value ) ) {
 			found = 1;
 			break;
@@ -161,10 +164,6 @@ static int s_has_value( const char *value, struct llist* l ) {
 
 		l->current = l->current->next;
 	}
-
-	// if ( found ) {
-	// 	*value = l->current->value;
-	// }
 
 	l->current = l->first;
 
@@ -206,11 +205,12 @@ static int s_remove( const char *name, struct llist* l ) {
 		if ( 0 == strcmp( l->current->name, name ) ) {
 			if ( NULL != prev ) {
 				prev->next = l->current->next;
-				l->size -= L_MEM( l->current );
-				free( l->current );
 				
 			} else {
 				l->first = l->current->next;
+			}
+
+			if ( l->current->is_string ) {
 				l->size -= L_MEM( l->current );
 				free( l->current );
 			}
@@ -259,16 +259,25 @@ static int s_merge( struct llist *two, struct llist *one ) {
 }
 
 static int s_empty( struct llist *l ) {
+	int debug = 0;
+
+	if ( debug ) fprintf( stderr, "Emptying list\n" );
+
 	struct llist_item* c;
 
 	if ( l->first ) {
 		l->current = l->first;
 
 		while ( l->current ) {
+			if ( debug ) fprintf( stderr, "Emptying item '%s' - '%s'\n", l->current->name, l->current->value );
 			c = l->current;
 			l->current = l->current->next;
-			l->size -= L_MEM( c );
-			free( c );
+
+			if ( c->is_string ) {
+				if ( debug ) fprintf( stderr, "Is string item - free memory\n" );
+				l->size -= L_MEM( c );
+				free( c );
+			}
 		}
 
 		l->first = NULL;
@@ -302,6 +311,7 @@ static int s_count( struct llist* l ) {
 struct llist* init_llist() {
 	struct llist* t = malloc( sizeof( struct llist ) );
 	t->add = &s_add;
+	t->addp = s_addp;
 	t->get = &s_get;
 	t->has_value = &s_has_value;
 	t->print = &s_print;

@@ -69,15 +69,20 @@ int check_source( char*, struct stat* );
 int on_iterate_error( char* );
 char* add_cwd( char* );
 int make_package( void );
-int run_zip( void );
+int run_zip( char* );
 void sig_cld( int );
 int make_dir( char*, mode_t );
 int fill_temp_package();
 int make_file( char*, mode_t );
 char *file_name( char* );
 char *dir_name( char* );
+int create_translation( FILE*, char* );
+int run_filters( void );
+int fetch_translation( FILE*, struct llist* );
+struct llist* get_matches( char* );
+int init_filters( void );
 
-#define MAX_LINE 200
+#define MAX_LINE 400
 #define DEBUG 0
 #define REGEX_MATCH_COUNT 10
 

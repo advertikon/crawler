@@ -29,7 +29,8 @@ struct llist
 			*exclude_file,
 			*include_regexp,
 			*exclude_regexp,
-			*temp;
+			*temp,
+			*filters;
 struct winsize win_size;
 
 regmatch_t m[ REGEX_MATCH_COUNT ];
@@ -185,9 +186,7 @@ int main( int argc, char **argv ) {
 				print_config();
 				break;
 			case C_MAKE:
-				start_clock();
 				make_package();
-				end_clock( "Package creation time:" );
 				break;
 			default:
 				show_commands();
@@ -1064,7 +1063,7 @@ void end_clock( char *msg ) {
     	}
     }
 
-    printf( "%s\n", msg );
+    printf( "%s: ", msg );
     printf(
     	"Real Time: %7.2f, User Time %7.2f, System Time %7.2f\n",
         ( en_time - st_time ) / (float)clockticks,
@@ -1374,27 +1373,66 @@ int make_package() {
 		print_error( "Failed to create upload folder for package data: %s\n", strerror( errno ) );
 	}
 
+	start_clock();
 	fill_temp_package();
+	end_clock( "Fill in package structure for OC23+" );
 
+	start_clock();
+	run_filters();
+	end_clock( "Filters" );
 
-	// run_zip();
+	start_clock();
+	run_zip( "package" );
+	end_clock( "Zipping package for OC23+" );
 
 	return 0;
 }
 
-int run_zip() {
+/**
+ * Spawns ZIP to make zipped package
+ *
+ */
+int run_zip( char *package_name ) {
+	int debug = 0;
+
+	char src_path[ path_max_size ];
+	char t_cwd[ path_max_size ];
+	char *mode = "-q";
+
 	pid_t pid;
 
 	if ( ( pid = fork() ) < 0 ) {
 		print_error( "Failed to fork process for zip" );
 
 	} else if ( pid > 0 ) {
-		printf( "Child with pid %d was forked\n", pid );
+		if ( DEBUG || debug ) printf( "Child with pid %d was forked\n", pid );
 		return 0;
 	}
 
-	if ( execlp( "ls", "ls", "-l", (char*)0 ) < 0 ) {
-		print_error( "Failed to excec" );
+	memset( src_path, '\0', path_max_size );
+	memset( t_cwd, '\0', path_max_size );
+
+	strcpy( src_path, pckg_tmp_dir );
+	
+	if ( NULL == getcwd( t_cwd, path_max_size ) ) {
+		fprintf( stderr, "run_zip: failed to get current working directory to '%s': %s", pckg_tmp_dir, strerror( errno ) );
+		exit( 1 );
+	}
+
+	if ( 0 != chdir( pckg_tmp_dir ) ) {
+		fprintf( stderr, "run_zip: failed to change working directory to '%s': %s", pckg_tmp_dir, strerror( errno ) );
+		exit( 1 );
+	}
+
+	if ( DEBUG || debug ) printf( "Changing CWD to '%s'\n", pckg_tmp_dir );
+
+	if ( DEBUG || debug ) {
+		mode[ 1 ] = 'v';
+	}
+
+	// Create zip package one level up from CWD
+	if ( execlp( "zip", "zip", "-r", mode, "../package", ".", (char*)0 ) < 0 ) {
+		print_error( "run_zip: Failed to excec zip" );
 	}
 }
 
@@ -1619,4 +1657,117 @@ char *dir_name( char *path ) {
 	if ( DEBUG || debug )fprintf( stderr, "Path '%s' resolved to directory name '%s'\n", path, out );
 
 	return out;
+}
+
+int create_translation( FILE* f, char *name ) {
+	struct llist *admin_t, *catalog_t, *common_t;
+
+	admin_t = init_llist();
+	catalog_t = init_llist();
+	common_t = init_llist();
+
+	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
+		fetch_translation( f, catalog_t );
+
+	} else if ( 0 == ( strncmp( name, "admin/", 6 ) ) ) {
+		fetch_translation( f, admin_t );
+
+	} else {
+		fetch_translation( f, common_t );
+	}
+
+	return 0;
+}
+
+int fetch_translation( FILE* f, struct llist* l ) {
+	char line[ MAX_LINE ];
+	struct llist* matches;
+
+	rewind( f );
+
+	while( NULL != fgets( line, MAX_LINE, f ) ) {
+		if ( match( line, "__\\((.*)\\)", m, 0 ) ) {
+			matches = get_matches( line );
+			matches->print( matches );
+			matches->empty( matches );
+			free( matches );
+		}
+	}
+
+	if ( ferror( f ) ) {
+		fprintf( stderr, "fetch_translation: read file error: %s\n", strerror( errno ) );
+		exit( 1 );
+	}
+
+	return 0;
+}
+
+int run_filters() {
+	FILE *f;
+
+	if ( NULL == filters->first ) {
+		init_filters();
+	}
+
+	// There are no files to process upon or there are no filters to process with
+	if ( NULL == files->first || NULL == filters->first ) return 0;
+
+	files->current = files->first;
+
+	while ( files->current ) {
+		if ( NULL == ( f = fopen( files->current->name, "r+" ) ) ) {
+			fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
+			return 1;
+		}
+
+		filters->current = filters->first;
+
+		while( filters->current ) {
+			// filters->current->value( f, files->current->name );
+			filters->print( filters );
+			filters->current = filters->current->next;
+		}
+
+		files->current = files->current->next;
+		fclose( f );
+		exit( 4 );
+	}
+}
+
+int init_filters() {
+	filters = init_llist();
+	filters->addp( "translation", &create_translation, filters );
+
+	return 1;
+}
+
+/**
+ * Returns pointer to list of matches get from match structure of regex
+ *
+ */
+struct llist *get_matches( char *str ) {
+	size_t str_len = strlen( str ) + 1;
+	int reg_len, i;
+
+	char* t_line = malloc( str_len );
+	struct llist *matches;
+
+	if ( NULL == t_line ) {
+		print_error( "get_matches: failed to allocate memory" );
+	}
+
+	matches = init_llist();
+
+	for ( i = 0; i < REGEX_MATCH_COUNT; i++ ) {
+		if ( -1 != m[ i ].rm_so ) {
+			memset( t_line, '\0', str_len );
+			reg_len = m[ 1 ].rm_eo - m[ i ].rm_so;
+			strncpy( t_line, &str[ m[ i ].rm_so ], reg_len );
+			matches->add( NULL, t_line, matches );
+		}
+	}
+
+	free( t_line );
+
+	return matches;
 }

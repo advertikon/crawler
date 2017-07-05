@@ -8,15 +8,17 @@
 
 struct llist_item {
 	char* name;
-	char* value;
+	void* value;
 	struct llist_item* next;
 	int index;
+	int is_string;
 };
 
 struct llist {
 	struct llist_item* first;
 	struct llist_item* current;
 	int(*add)( const char*, const char*, struct llist* );
+	int(*addp)( const char*, void*, struct llist* );
 	int(*get)( const char*, char**, struct llist* );
 	int(*has_value)( const char*, struct llist* );
 	int(*print)( struct llist* );
@@ -28,6 +30,7 @@ struct llist {
 };
 
 static int s_add( const char*, const char*, struct llist* );
+static int s_addp( const char*, void*, struct llist* );
 static int s_get( const char*, char**, struct llist* );
 static int s_has_value( const char*, struct llist* );
 static int s_print( struct llist* );
