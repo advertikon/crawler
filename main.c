@@ -1675,6 +1675,18 @@ int create_translation( FILE* f, char *name ) {
 	catalog_t = init_llist();
 	common_t = init_llist();
 
+	char *p;
+
+	if ( NULL != strstr( name, "/language/" ) ) {
+		return 0; // Skip language files
+	}
+
+	p = strrchr( name, '.' );
+
+	if ( NULL == p || strcmp( p, ".php" ) != 0 ) {
+		return 0; // Skip non-php files
+	}
+
 	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
 		fetch_translation( f, catalog_t );
 
@@ -1689,15 +1701,49 @@ int create_translation( FILE* f, char *name ) {
 }
 
 int fetch_translation( FILE* f, struct llist* l ) {
+	int debug = 0;
+
+	int i;
+	size_t tr_len;
+
 	char line[ MAX_LINE ];
+	char *tr;
+	char *translation;
+	char *start;
+	char *end;
+
 	struct llist* matches;
 
-	rewind( f );
+	rewind( f ); 
 
 	while( NULL != fgets( line, MAX_LINE, f ) ) {
-		if ( 0 == match( line, "__\\((.*)\\)", m, 0 ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Processing line '%s'", line );
+
+		if ( 0 == match( line, "__\\(([^)]+)\\)", m, 0 ) ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Match found\n", line );
+
 			matches = get_matches( line );
-			matches->print( matches );
+
+			if ( 0 == matches->get( "1", &tr, matches ) ) {
+				tr = trim( tr, NULL );
+printf( "First match: '%s'\n", tr );
+				if ( tr[ 0 ] == '\'' || tr[ 0 ] == '"' ) {
+					printf( "Open\n" );
+					start = &tr[ 1 ];
+					tr_len = strlen( tr );
+
+					for ( i = 2; i < tr_len; i++ ) {
+						printf( "Curr: %s, start: %s, prev: %s\n", &tr[ i ], start, &tr[ i - 1 ] );
+						if ( tr[ i ] == *start && tr[ i - 1 ] != '\\' ) {
+							end = &tr[ i ];
+							*end = '\0';
+							printf( "Match: %s\n", tr );
+						}
+					}
+				}
+			}
+
+			// matches->print( matches );
 			matches->empty( matches );
 			free( matches );
 		}
@@ -1712,7 +1758,7 @@ int fetch_translation( FILE* f, struct llist* l ) {
 }
 
 int run_filters() {
-	int debug = 1;
+	int debug = 0;
 
 	FILE *f;
 
@@ -1744,13 +1790,11 @@ int run_filters() {
 			if ( DEBUG || debug ) fprintf( stderr, "Running filter '%s'\n", filters->current->name );
 
 			((callback)filters->current->value)( f, files->current->name );
-			// filters->print( filters );
 			filters->current = filters->current->next;
 		}
 
 		files->current = files->current->next;
 		fclose( f );
-		exit( 4 );
 	}
 }
 
@@ -1768,7 +1812,7 @@ int init_filters() {
  *
  */
 struct llist *get_matches( const char *str ) {
-	int debug = 1;
+	int debug = 0;
 
 	size_t str_len = strlen( str ) + 1;
 	int reg_len, i;
