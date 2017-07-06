@@ -53,6 +53,8 @@ int main( int argc, char **argv ) {
 
 	set_winsize();
 
+	if ( DEBUG ) fprintf( stderr, "Initializing lists....\n" );
+
 	include_dir = init_llist();
 	exclude_dir = init_llist();
 	include_file = init_llist();
@@ -61,7 +63,14 @@ int main( int argc, char **argv ) {
 	exclude_regexp = init_llist();
 	temp = init_llist();
 
+	printf( "temp: %p\n", temp );
+
+	if ( DEBUG ) fprintf( stderr, "Parsing configuration....\n" );
+
 	parse_config();
+
+	if ( DEBUG ) fprintf( stderr, "Configuration has been parsed\n" );
+
 
 	files = init_llist();
 
@@ -585,7 +594,7 @@ int write_config_section( char* name, FILE* stream, struct llist* l ) {
 		fprintf( stream, "%s:\n", name );
 
 		while( l->current ) {
-			fprintf( stream, " - %s\n", l->current->value );
+			fprintf( stream, " - %s\n", l->current->as_string( l->current ) );
 			l->current = l->current->next;
 		}
 	}
@@ -624,7 +633,7 @@ int print_del_list( struct llist* l ) {
 			printf( " " );
 		}
 
-		printf( "[%.2s] - %s\n", l->current->name, l->current->value );
+		printf( "[%.2s] - %s\n", l->current->name, l->current->as_string( l->current ) );
 		l->current = l->current->next;
 	}
 
@@ -1030,7 +1039,7 @@ int check_regexp(  char* str, struct llist* l ) {
 		l->current = l->first;
 
 		while ( l->current ) {
-			if ( DEBUG )fprintf( stderr, "Regexp: '%s'\n", l->current->value );
+			if ( DEBUG )fprintf( stderr, "Regexp: '%s'\n", l->current->as_string( l->current ) );
 			if ( match( str, l->current->value, NULL, 0 ) == 0 ) {
 				if ( DEBUG )fprintf( stderr, "Match\n" );
 				return 0;
@@ -1168,14 +1177,14 @@ int load_dependencies() {
 					print_error( "Failed to open file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) );
 				}
 
-				if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", files->current->value );
+				if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", files->current->as_string( files->current ) );
 
 				// Read up to max_line lines
 				while ( NULL != ( fgets( line, MAX_LINE, f ) ) ) {
 					if ( DEBUG || debug )fprintf( stderr, "Line: '%s'", line );
 
 					if ( c > max_line ) {
-						fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_line, files->current->value );
+						fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_line, files->current->as_string( files->current ) );
 						goto next;
 					}
 
@@ -1686,7 +1695,7 @@ int fetch_translation( FILE* f, struct llist* l ) {
 	rewind( f );
 
 	while( NULL != fgets( line, MAX_LINE, f ) ) {
-		if ( match( line, "__\\((.*)\\)", m, 0 ) ) {
+		if ( 0 == match( line, "__\\((.*)\\)", m, 0 ) ) {
 			matches = get_matches( line );
 			matches->print( matches );
 			matches->empty( matches );
@@ -1703,18 +1712,27 @@ int fetch_translation( FILE* f, struct llist* l ) {
 }
 
 int run_filters() {
+	int debug = 1;
+
 	FILE *f;
 
-	if ( NULL == filters->first ) {
+	if ( DEBUG || debug ) fprintf( stderr, "Start filtering...\n" );
+
+	if ( NULL == filters ) {
 		init_filters();
 	}
 
 	// There are no files to process upon or there are no filters to process with
-	if ( NULL == files->first || NULL == filters->first ) return 0;
+	if ( NULL == files->first || NULL == filters->first ) {
+		if ( DEBUG || debug ) fprintf( stderr, "There is no filters to be run\n" );
+		return 0;
+	}
 
 	files->current = files->first;
 
 	while ( files->current ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Opening file '%s'\n", files->current->name );
+
 		if ( NULL == ( f = fopen( files->current->name, "r+" ) ) ) {
 			fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
 			return 1;
@@ -1723,8 +1741,10 @@ int run_filters() {
 		filters->current = filters->first;
 
 		while( filters->current ) {
-			// filters->current->value( f, files->current->name );
-			filters->print( filters );
+			if ( DEBUG || debug ) fprintf( stderr, "Running filter '%s'\n", filters->current->name );
+
+			((callback)filters->current->value)( f, files->current->name );
+			// filters->print( filters );
 			filters->current = filters->current->next;
 		}
 
@@ -1735,8 +1755,10 @@ int run_filters() {
 }
 
 int init_filters() {
+	if ( DEBUG ) fprintf( stderr, "Initializing filters\n" );
+
 	filters = init_llist();
-	filters->addp( "translation", &create_translation, filters );
+	filters->addp( "translation", create_translation, filters );
 
 	return 1;
 }
@@ -1745,24 +1767,37 @@ int init_filters() {
  * Returns pointer to list of matches get from match structure of regex
  *
  */
-struct llist *get_matches( char *str ) {
+struct llist *get_matches( const char *str ) {
+	int debug = 1;
+
 	size_t str_len = strlen( str ) + 1;
 	int reg_len, i;
 
+	if ( DEBUG || debug ) fprintf( stderr, "Start fetching matches form string '%s' with the length: %ld\n", str, str_len );
+
 	char* t_line = malloc( str_len );
-	struct llist *matches;
 
 	if ( NULL == t_line ) {
 		print_error( "get_matches: failed to allocate memory" );
 	}
 
+	struct llist *matches;
 	matches = init_llist();
 
 	for ( i = 0; i < REGEX_MATCH_COUNT; i++ ) {
 		if ( -1 != m[ i ].rm_so ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Match #%d\n", i  );
+			if ( DEBUG || debug ) fprintf( stderr, "Match start: %d, match end: %d\n", m[ i ].rm_so, m[ i ].rm_eo );
+
 			memset( t_line, '\0', str_len );
-			reg_len = m[ 1 ].rm_eo - m[ i ].rm_so;
+			reg_len = m[ i ].rm_eo - m[ i ].rm_so;
+
+			if ( DEBUG || debug ) fprintf( stderr, "Copying string from offset %d %d characters length\n", m[ i ].rm_so, reg_len );
+
 			strncpy( t_line, &str[ m[ i ].rm_so ], reg_len );
+
+			if ( DEBUG || debug ) fprintf( stderr, "Match value: '%s'\n", t_line );
+
 			matches->add( NULL, t_line, matches );
 		}
 	}

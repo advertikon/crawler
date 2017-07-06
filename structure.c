@@ -22,7 +22,7 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 
 	strcpy( t_val, value );
 
-	if ( debug ) fprintf( stderr, "Copy value into temp variable\n", value );
+	if ( debug ) fprintf( stderr, "Copy value '%s' into temp variable\n", value );
 
 	if ( 0 != s_addp( name, t_val, l ) ) {
 		print_error( "Failed to add item to lost" );
@@ -37,7 +37,7 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 static int s_addp( const char *name, void *value, struct llist* l  ) {
 	int debug = 0;
 
-	if ( debug ) fprintf( stderr, "Adding item '%s' - '%s' to a list\n", name, value );
+	if ( debug ) fprintf( stderr, "Adding item '%s' - '%s' to a list\n", name, (char*)value );
 
 	size_t size;
 	char foo[ 100 ];
@@ -54,7 +54,7 @@ static int s_addp( const char *name, void *value, struct llist* l  ) {
 		l->current = l->current->next;
 	}
 
-	l->current = (struct llist_item*)malloc( sizeof( struct llist_item ) );
+	l->current = init_llist_item();
 
 	if ( NULL == l->current ) {
 		print_error( "Failed to allocate memory for list structure" );
@@ -97,7 +97,6 @@ static int s_addp( const char *name, void *value, struct llist* l  ) {
 
 	l->size += size;
 	l->current->value = value;
-	l->current->is_string = 0;
 
 	if ( NULL == l->first ) {
 		l->first = l->current;
@@ -178,7 +177,7 @@ static int s_print( struct llist* l ) {
 	l->current = l->first;
 
 	while( l->current ) {
-		printf( "%s = %s\n", l->current->name, l->current->value );
+		printf( "%s = %s\n", l->current->name, (char*)l->current->value );
 		l->current = l->current->next;
 	}
 
@@ -269,7 +268,7 @@ static int s_empty( struct llist *l ) {
 		l->current = l->first;
 
 		while ( l->current ) {
-			if ( debug ) fprintf( stderr, "Emptying item '%s' - '%s'\n", l->current->name, l->current->value );
+			if ( debug ) fprintf( stderr, "Emptying item '%s' - '%s'\n", l->current->name, (char*)l->current->value );
 			c = l->current;
 			l->current = l->current->next;
 
@@ -308,20 +307,46 @@ static int s_count( struct llist* l ) {
 	return c;
 }
 
+static char* l_as_string( struct llist_item* li ) {
+	return li->is_string ? li->value : "(pointer)";
+}
+
+struct llist_item* init_llist_item() {
+	struct llist_item *li;
+	li = (struct llist_item*)malloc( sizeof( struct llist_item ) );
+	li->name = NULL;
+	li->value = NULL;
+	li->next = NULL;
+	li->index = 0;
+	li->is_string = 0;
+	li->as_string = l_as_string;
+
+	return li;
+}
+
 struct llist* init_llist() {
-	struct llist* t = malloc( sizeof( struct llist ) );
-	t->add = &s_add;
+	int debug = 0;
+
+	struct llist *t;
+
+	if ( debug ) fprintf( stderr, "List initialization start\n" );
+
+	t = (struct llist*)malloc( sizeof( struct llist ) );
+	t->add = s_add;
 	t->addp = s_addp;
-	t->get = &s_get;
-	t->has_value = &s_has_value;
-	t->print = &s_print;
-	t->remove = &s_remove;
-	t->merge = &s_merge;
-	t->empty = &s_empty;
-	t->count = &s_count;
+	t->get = s_get;
+	t->has_value = s_has_value;
+	t->print = s_print;
+	t->remove = s_remove;
+	t->merge = s_merge;
+	t->empty = s_empty;
+	t->count = s_count;
 	t->current = NULL;
 	t->first = NULL;
 	t->size = sizeof( struct llist );
 
+	if ( debug ) fprintf( stderr, "List initialization end\n" );
+
 	return t;
+
 }

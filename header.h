@@ -79,7 +79,7 @@ char *dir_name( char* );
 int create_translation( FILE*, char* );
 int run_filters( void );
 int fetch_translation( FILE*, struct llist* );
-struct llist* get_matches( char* );
+struct llist* get_matches( const char* );
 int init_filters( void );
 
 #define MAX_LINE 400
