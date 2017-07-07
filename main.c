@@ -7,6 +7,7 @@ char *abort_command_str = "q";
 char* config_name = ".crawler";
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
+char lang_dir[ path_max_size ];
 char* cwd;
 
 static int depth = 0;
@@ -30,7 +31,11 @@ struct llist
 			*include_regexp,
 			*exclude_regexp,
 			*temp,
-			*filters;
+			*filters,
+			*admin_t,
+			*catalog_t,
+			*common_t;
+
 struct winsize win_size;
 
 regmatch_t m[ REGEX_MATCH_COUNT ];
@@ -61,6 +66,9 @@ int main( int argc, char **argv ) {
 	exclude_file = init_llist();
 	include_regexp = init_llist();
 	exclude_regexp = init_llist();
+	admin_t = init_llist();
+	catalog_t = init_llist();
+	common_t = init_llist();
 	temp = init_llist();
 
 	printf( "temp: %p\n", temp );
@@ -1668,13 +1676,11 @@ char *dir_name( char *path ) {
 	return out;
 }
 
-int create_translation( FILE* f, char *name ) {
-	struct llist *admin_t, *catalog_t, *common_t;
-
-	admin_t = init_llist();
-	catalog_t = init_llist();
-	common_t = init_llist();
-
+/**
+ * Scan file and fill in structures of translations
+ *
+ */
+int fill_translation( FILE* f, char *name ) {
 	char *p;
 
 	if ( NULL != strstr( name, "/language/" ) ) {
@@ -1700,6 +1706,10 @@ int create_translation( FILE* f, char *name ) {
 	return 0;
 }
 
+/**
+ * Scans file pointed to by f and fills in structure l
+ *
+ */
 int fetch_translation( FILE* f, struct llist* l ) {
 	int debug = 0;
 
@@ -1720,30 +1730,27 @@ int fetch_translation( FILE* f, struct llist* l ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Processing line '%s'", line );
 
 		if ( 0 == match( line, "__\\(([^)]+)\\)", m, 0 ) ) {
-			if ( DEBUG || debug ) fprintf( stderr, "Match found\n", line );
+			if ( DEBUG || debug ) fprintf( stderr, "Match found\n" );
 
 			matches = get_matches( line );
 
 			if ( 0 == matches->get( "1", &tr, matches ) ) {
 				tr = trim( tr, NULL );
-printf( "First match: '%s'\n", tr );
+
 				if ( tr[ 0 ] == '\'' || tr[ 0 ] == '"' ) {
-					printf( "Open\n" );
-					start = &tr[ 1 ];
+					start = &tr[ 0 ];
 					tr_len = strlen( tr );
 
 					for ( i = 2; i < tr_len; i++ ) {
-						printf( "Curr: %s, start: %s, prev: %s\n", &tr[ i ], start, &tr[ i - 1 ] );
 						if ( tr[ i ] == *start && tr[ i - 1 ] != '\\' ) {
 							end = &tr[ i ];
 							*end = '\0';
-							printf( "Match: %s\n", tr );
+							l->add( NULL, ++start, l );
 						}
 					}
 				}
 			}
 
-			// matches->print( matches );
 			matches->empty( matches );
 			free( matches );
 		}
@@ -1755,6 +1762,13 @@ printf( "First match: '%s'\n", tr );
 	}
 
 	return 0;
+}
+
+int save_translation() {
+	admin_t->merge( common_t, admin_t );
+	catalog_t->merge( common_t, catalog_t );
+
+
 }
 
 int run_filters() {

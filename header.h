@@ -76,7 +76,7 @@ int fill_temp_package();
 int make_file( char*, mode_t );
 char *file_name( char* );
 char *dir_name( char* );
-int create_translation( FILE*, char* );
+int fill_translation( FILE*, char* );
 int run_filters( void );
 int fetch_translation( FILE*, struct llist* );
 struct llist* get_matches( const char* );

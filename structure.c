@@ -12,6 +12,7 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 
 	char *t_val;
 	size_t size;
+	int status;
 	
 	size = strlen( value ) + 1;
 	t_val = malloc( size );
@@ -24,8 +25,8 @@ static int s_add( const char *name, const char *value, struct llist* l ) {
 
 	if ( debug ) fprintf( stderr, "Copy value '%s' into temp variable\n", value );
 
-	if ( 0 != s_addp( name, t_val, l ) ) {
-		print_error( "Failed to add item to lost" );
+	if ( 0 != ( status = s_addp( name, t_val, l ) ) ) {
+		return status;
 	}
 
 	l->current->is_string = 1;
@@ -45,7 +46,7 @@ static int s_addp( const char *name, void *value, struct llist* l  ) {
 	int max_index = 0;
 
 	if ( s_get( name, NULL, l ) == 0 ) {
-		fprintf( stderr, "Failed to add item to list: name '%s' already exists", name );
+		fprintf( stderr, "Failed to add item to list: name '%s' already exists\n", name );
 		return 1;
 	}
 
