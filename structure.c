@@ -103,6 +103,8 @@ static int s_addp( const char *name, void *value, struct llist* l  ) {
 		l->first = l->current;
 	}
 
+	if ( debug ) fprintf( stderr, "Item has been added successfully\n" );
+
 	return 0;
 }
 
@@ -139,6 +141,57 @@ static int s_get( const char *name, char** value, struct llist* l ) {
 	l->current = l->first;
 
 	return found ? 0 : 1;
+}
+
+static char *s_fetch( const char *name, struct llist* l ) {
+	int debug = 0;
+
+	int found = 0;
+	int len;
+	char *ret;
+
+	if ( debug ) fprintf( stderr, "Fetching value with name '%s'\n", name );
+
+	if ( NULL == name || NULL == l || NULL == l->first ) {
+		if ( debug ) fprintf( stderr, "Empty result\n" );
+
+		return NULL;
+	}
+
+	l->current = l->first;
+
+	while ( l->current ) {
+		if ( 0 == strcmp( l->current->name, name ) ) {
+			found = 1;
+
+			if ( debug ) fprintf( stderr, "Found value '%s'\n", l->current->as_string( l->current ) );
+
+			break;
+		}
+
+		l->current = l->current->next;
+	}
+
+	if ( found && NULL != l->current->value ) {
+		len = strlen( l->current->value ) + 1;
+		ret = (char*)malloc( len );
+
+		if ( NULL == ret ) {
+			print_error( "llist::fetch: failed to allocate memory for value" );
+		} 
+
+		memset( ret, '\0', len );
+		strcpy( ret, l->current->value );
+		l->current = l->first;
+
+		return ret;
+	}
+
+	l->current = l->first;
+
+	if ( debug ) fprintf( stderr, "Nothing found\n" );
+
+	return NULL;
 }
 
 /**
@@ -336,6 +389,7 @@ struct llist* init_llist() {
 	t->add = s_add;
 	t->addp = s_addp;
 	t->get = s_get;
+	t->fetch = s_fetch;
 	t->has_value = s_has_value;
 	t->print = s_print;
 	t->remove = s_remove;

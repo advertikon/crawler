@@ -81,10 +81,13 @@ int run_filters( void );
 int fetch_translation( FILE*, struct llist* );
 struct llist* get_matches( const char* );
 int init_filters( void );
+int get_version( void );
+char *get_package_dir( void );
 
 #define MAX_LINE 400
 #define DEBUG 0
 #define REGEX_MATCH_COUNT 10
+#define VERSION_SIZE 10
 
 #define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
 
@@ -105,5 +108,8 @@ enum COMMANDS {
 	C_ITERATE,
 	C_PRINT_FILES,
 	C_PRINT_CONFIG,
-	C_MAKE
+	C_MAKE,
+	C_SET_MAJOR,
+	C_SET_MINOR,
+	C_SET_PATCH
 };

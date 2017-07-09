@@ -21,6 +21,7 @@ struct llist {
 	int(*add)( const char*, const char*, struct llist* );
 	int(*addp)( const char*, void*, struct llist* );
 	int(*get)( const char*, char**, struct llist* );
+	char* (*fetch)( const char*, struct llist* );
 	int(*has_value)( const char*, struct llist* );
 	int(*print)( struct llist* );
 	int(*remove)( const char*, struct llist* );
@@ -33,6 +34,7 @@ struct llist {
 static int s_add( const char*, const char*, struct llist* );
 static int s_addp( const char*, void*, struct llist* );
 static int s_get( const char*, char**, struct llist* );
+static char *s_fetch( const char*, struct llist* );
 static int s_has_value( const char*, struct llist* );
 static int s_print( struct llist* );
 static int s_remove( const char*, struct llist* );

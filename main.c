@@ -7,7 +7,11 @@ char *abort_command_str = "q";
 char* config_name = ".crawler";
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
-char lang_dir[ path_max_size ];
+char *crawler_storage_dir = "/var/www/html/crawler/";
+char *pckg_name_templ = "%s-%s-%d.%d.%d.ocmod.zip";
+char *pckg_mane_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
+// char *pckg_mane_regex = "%s-[^-]+-([0-9]+)";
+char *lang_dir;
 char* cwd;
 
 static int depth = 0;
@@ -19,6 +23,9 @@ int wait_confirm = 0;
 int save_me = 0;
 int cwd_length = 0;
 int files_count;
+int major = 0; // Package major number
+int minor = 1; // Package manor number
+int patch = 0; // Package patch number
 
 size_t path_max_size;
 
@@ -52,9 +59,26 @@ int main( int argc, char **argv ) {
 	getcwd( cwd, path_max_size );
 	cwd_length = strlen( cwd );
 
+	int i;
+	regmatch_t *t_m;
+
+	code = (char*)malloc( MAX_LINE );
+
+	if ( NULL == code ) {
+		print_error( "Failed to allocate memory for code package code" );
+	}
+
+	memset( code, '\0', MAX_LINE );
+
+	lang_dir = malloc( path_max_size );
+
+	if ( NULL == lang_dir ) {
+		print_error( "Failed allocate memory for lang_dir variable" );
+	}
+
 	signal( SIGINT, &int_handler );
 	signal( SIGWINCH, &sig_winch );
-	signal( SIGCLD, &sig_cld );
+	// signal( SIGCLD, &sig_cld );
 
 	set_winsize();
 
@@ -70,8 +94,7 @@ int main( int argc, char **argv ) {
 	catalog_t = init_llist();
 	common_t = init_llist();
 	temp = init_llist();
-
-	printf( "temp: %p\n", temp );
+	files = init_llist();
 
 	if ( DEBUG ) fprintf( stderr, "Parsing configuration....\n" );
 
@@ -79,13 +102,10 @@ int main( int argc, char **argv ) {
 
 	if ( DEBUG ) fprintf( stderr, "Configuration has been parsed\n" );
 
-
-	files = init_llist();
-
 	parse_args( argv );
 	print_args();
 
-	code = (char*)malloc( MAX_LINE );
+	// Rewrite code configuration which may be in configuration 
 	get_arg( "code", &code );
 
 	while ( 1 ) {
@@ -93,11 +113,14 @@ int main( int argc, char **argv ) {
 			show_commands();
 		}
 
+		memset( line, '\0', MAX_LINE );
+
 		if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
 			perror( "Failed to read line from STDIN" );
 			return 1;
 		}
 
+		// Trim trailing newline
 		line[ strlen( line ) - 1 ] = '\0';
 
 		if ( strcmp( line, "exit" ) == 0 ) {
@@ -205,6 +228,22 @@ int main( int argc, char **argv ) {
 			case C_MAKE:
 				make_package();
 				break;
+			case C_SET_NAME:
+				command = C_SET_NAME;
+				printf( "Extension name >> " );
+				break;
+			case C_SET_MAJOR:
+				command = C_SET_MAJOR;
+				printf( "Major number >> " );
+				break;
+			case C_SET_MINOR:
+				command = C_SET_MINOR;
+				printf( "Manor number >> " );
+				break;
+			case C_SET_PATCH:
+				command = C_SET_PATCH;
+				printf( "Patch number >> " );
+				break;
 			default:
 				show_commands();
 				break;
@@ -270,6 +309,30 @@ int main( int argc, char **argv ) {
 				break;
 			case C_DEL_EXCL_REGEXP:
 				del_from( line, exclude_regexp );
+				break;
+			case C_SET_NAME:
+				memset( code, '\0', MAX_LINE );
+				strncpy( code, line, MAX_LINE );
+				command = 0;
+				config_is_dirty = 1;
+				break;
+			case C_SET_MAJOR:
+				major = atoi( line );
+				minor = 0;
+				patch = 0;
+				command = 0;
+				config_is_dirty = 1;
+				break;
+			case C_SET_MINOR:
+				minor = atoi( line );
+				patch = 0;
+				command = 0;
+				config_is_dirty = 1;
+				break;
+			case C_SET_PATCH:
+				patch = atoi( line );
+				command = 0;
+				config_is_dirty = 1;
 				break;
 			default :
 				printf( "Unknown command: %d\n", command );
@@ -413,6 +476,10 @@ int parse_config( void ) {
   int is_exclude_dir = 0;
   int is_exclude_file = 0;
   int is_exclude_regexp = 0;
+  int is_major = 0;
+  int is_minor = 0;
+  int is_patch = 0;
+  int is_code = 0;
 
   if ( NULL == fh ) {
 	perror( "Failed to open configuration file" );
@@ -478,6 +545,31 @@ int parse_config( void ) {
     case YAML_SCALAR_EVENT:
 	    // printf( "Got scalar (value %s)\n", event.data.scalar.value );
 
+    	if ( is_code ) {
+    		memset( code, '\0', MAX_LINE );
+    		strcpy( code, event.data.scalar.value );
+    		is_code = 0;
+    		break;
+    	}
+
+    	if ( is_major ) {
+    		major = atoi( event.data.scalar.value );
+    		is_major = 0;
+    		break;
+    	}
+
+    	if ( is_minor ) {
+    		minor = atoi( event.data.scalar.value );
+    		is_minor = 0;
+    		break;
+    	}
+
+    	if ( is_patch ) {
+    		patch = atoi( event.data.scalar.value );
+    		is_patch = 0;
+    		break;
+    	}
+
     	if ( 0 == is_sequence && 1 == is_mapping ) {
     		if ( 0 == strcmp( "include_dir", event.data.scalar.value ) ) {
     			is_include_dir = 1;
@@ -496,6 +588,18 @@ int parse_config( void ) {
 
     		} else if ( 0 == strcmp( "exclude_regexp", event.data.scalar.value ) ) {
     			is_exclude_regexp = 1;
+
+    		} else if ( 0 == strcmp( "code", event.data.scalar.value ) ) {
+    			is_code = 1;
+
+    		} else if ( 0 == strcmp( "major", event.data.scalar.value ) ) {
+    			is_major = 1;
+
+    		} else if ( 0 == strcmp( "minor", event.data.scalar.value ) ) {
+    			is_minor = 1;
+
+    		} else if ( 0 == strcmp( "patch", event.data.scalar.value ) ) {
+    			is_patch = 1;
     		}
 
     	} else if ( 1 == is_sequence ) {
@@ -566,6 +670,11 @@ int save_config() {
 	write_config_section( "exclude_file", tc, exclude_file );
 	write_config_section( "exclude_regexp", tc, exclude_regexp );
 
+	fprintf( tc, "code : %s\n", code );
+	fprintf( tc, "major : %d\n", major );
+	fprintf( tc, "minor : %d\n", minor );
+	fprintf( tc, "patch : %d\n", patch );
+
 	/* Save changes into disk */
 	if ( 0 == rename( config_name, temp_name ) ) { /* old config to temp name */
 		if ( 0 == rename( raw_name, config_name ) ) { /* new config to config name */
@@ -574,7 +683,7 @@ int save_config() {
 				return 5;
 			}
 
-			fputs( "Configuration file was saved\n", stdout );
+			fputs( "Configuration file was updated\n", stdout );
 
 		} else {
 			perror( "Failed to set name for newly created configuration file" );
@@ -697,7 +806,6 @@ int show_commands() {
 
 	printf(
 		"%s\n" /* separator */
-		"%2d - Set module name\n"
 
 		"%2d - Add included directories\n"
 		"%2d - Add excluded directories\n"
@@ -718,13 +826,17 @@ int show_commands() {
 		"%2d - Print files\n"
 		"%2d - Print configurations\n"
 		"%2d - Make package\n"
+
+		"%2d - Set module name\n"
+		"%2d - Set package major number\n"
+		"%2d - Set package minor number\n"
+		"%2d - Set package patch number\n"
+
 		"%s\n" /* Separator */
 
 		"Make your choice > ",
 
 		line,
-
-		C_SET_NAME,
 
 		C_ADD_INCL_FOLDER,
 		C_ADD_EXCL_FOLDER,
@@ -745,6 +857,11 @@ int show_commands() {
 		C_PRINT_FILES,
 		C_PRINT_CONFIG,
 		C_MAKE,
+
+		C_SET_NAME,
+		C_SET_MAJOR,
+		C_SET_MINOR,
+		C_SET_PATCH,
 
 		line
 	);
@@ -1080,9 +1197,9 @@ void end_clock( char *msg ) {
     	}
     }
 
-    printf( "%s: ", msg );
+    printf( "%40.40s: ", msg );
     printf(
-    	"Real Time: %7.2f, User Time %7.2f, System Time %7.2f\n",
+    	"Real Time: %4.2f, User Time %4.2f, System Time %4.2f\n",
         ( en_time - st_time ) / (float)clockticks,
         ( en_cpu.tms_utime - st_cpu.tms_utime ) / (float)clockticks,
         ( en_cpu.tms_stime - st_cpu.tms_stime ) / (float)clockticks
@@ -1376,10 +1493,32 @@ char* add_cwd( char* path ) {
 int make_package() {
 	int s;
 	char u_folder[ path_max_size ];
+	char pckg_name[ path_max_size ];
+	char *pckg_dir;
+	char version[ VERSION_SIZE ];
 
 	if ( NULL == files->first ) {
 		fprintf( stderr, "Files list is empty. Nothing to process\n" );
 		return 1;
+	}
+
+	if ( '\0' == code[ 0 ] ) {
+		fprintf( stderr, "Extension name is mandatory\n" );
+		return 1;
+	}
+
+	memset( pckg_name, '\0', path_max_size );
+	memset( version, '\0', VERSION_SIZE );
+
+	if ( 0 != get_version() ) {
+		return 1;
+	}
+
+	pckg_dir = get_package_dir();
+
+	if ( make_dir( pckg_dir, 0775 ) < 0 ) {
+		fprintf( stderr, "make_package: Failed to create folder '%s': %s\n", pckg_dir, strerror( errno ) );
+		exit( 1 );
 	}
 
 	memset( u_folder, '\0', path_max_size );
@@ -1387,7 +1526,8 @@ int make_package() {
 	strcat( u_folder, upload_folder );
 
 	if ( ( s = make_dir( u_folder, S_IRWXU | S_IRWXG | S_IRWXO ) ) < 0 ) {
-		print_error( "Failed to create upload folder for package data: %s\n", strerror( errno ) );
+		fprintf( stderr, "make_package: Failed to create folder '%s': %s\n", u_folder, strerror( errno ) );
+		exit( 1 );
 	}
 
 	start_clock();
@@ -1398,9 +1538,145 @@ int make_package() {
 	run_filters();
 	end_clock( "Filters" );
 
-	start_clock();
-	run_zip( "package" );
-	end_clock( "Zipping package for OC23+" );
+	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
+
+	run_zip( pckg_name );
+
+	free( pckg_dir );
+
+	fprintf( stderr, "Package was saved under version: %d.%d.%d\n", major, minor, patch );
+
+	return 0;
+}
+
+/**
+ * Returns path to folder where zipped packages stored with respect to package name
+ *
+ */
+char *get_package_dir() {
+	char *pckg_dir = (char*)malloc( path_max_size );
+
+	if ( NULL == pckg_dir ) {
+		print_error( "get_package_dir: failed to allocate memory" );
+	}
+
+	memset( pckg_dir, '\0', path_max_size );
+	strcpy( pckg_dir, crawler_storage_dir );
+	strcat( pckg_dir, code );
+	strcat( pckg_dir, "/" );
+
+	return pckg_dir;
+}
+
+int get_version() {
+	int debug = 0;
+
+	int f_major = 0;
+	int f_minor = 0;
+	int f_patch = 0;
+
+	int t_major = 0;
+	int t_minor = 0;
+	int t_patch = 0;
+
+	int is_empty_dir = 1;
+
+	char regex[ MAX_LINE ];
+	char *pckg_dir;
+	char *temp;
+
+	struct llist *matches;
+
+	DIR *dir;
+	struct dirent *entry;
+
+	pckg_dir = get_package_dir();
+
+	if ( NULL != ( dir = opendir( pckg_dir ) ) ) {
+		sprintf( regex, pckg_mane_regex, code );
+
+		while ( NULL != ( entry = readdir( dir ) ) ) {
+			if ( entry->d_name[ 0 ] == '.' ) continue;
+
+			if ( DEBUG || debug ) fprintf( stderr, "Processing file '%s'\n", entry->d_name );
+			if ( DEBUG || debug ) fprintf( stderr, "Regex '%s'\n", regex );
+
+			if ( 0 == match( entry->d_name, regex, m, 0 ) ) {
+				if ( DEBUG || debug ) fprintf( stderr, "Match\n" );
+
+				is_empty_dir = 0;
+
+				matches = get_matches( entry->d_name );
+
+				if ( DEBUG || debug ) {
+					temp = matches->fetch( "0", matches );
+					if ( NULL != temp ) {
+						fprintf( stderr, "Full match: '%s'\n", temp );
+						free( temp );
+					}
+				}
+
+				temp = matches->fetch( "1", matches );
+
+				if ( NULL != temp ) {
+					t_major = atoi( temp );
+					free( temp );
+				}
+
+				temp = matches->fetch( "2", matches );
+
+				if ( NULL != temp ) {
+					t_minor = atoi( temp );
+					free( temp );
+				}
+
+				temp = matches->fetch( "3", matches );
+
+				if ( NULL != temp ) {
+					t_patch = atoi( temp );
+					free( temp );
+				}
+
+				if ( DEBUG || debug ) fprintf( stderr, "Version numbers found: %d.%d.%d\n", t_major, t_minor, t_patch );
+
+				if ( t_major > f_major ) {
+					f_major = t_major;
+					f_minor = t_minor;
+					f_patch = t_patch;
+
+				} else if ( t_major == f_major && t_minor > f_minor ) {
+					f_minor = t_minor;
+					f_patch = t_patch;
+
+				} else if ( t_major == f_major && t_minor == f_minor && t_patch > f_patch ) {
+					f_patch = t_patch;
+				}
+
+				free( matches );
+			}
+		}
+
+		if ( major == f_major && minor == f_minor && patch == f_patch && 0 == is_empty_dir) {
+			if ( DEBUG || debug ) fprintf( stderr, "Patch number automatically incremented\n" );
+
+			patch++;
+			config_is_dirty = 1;
+		}
+
+	} else if ( DEBUG || debug ) {
+		fprintf( stderr, "Package directory '%s' doesn't exist\n", pckg_dir );
+	}
+
+	if ( DEBUG || debug ) fprintf( stderr, "Version: %d.%d.%d\n", f_major, f_minor, f_patch );
+
+	// Patch number may be equal in case of first release, version will be 0.0.0
+	if ( major <= f_major && minor <= f_minor && patch < f_patch ) {
+		fprintf( stderr, "Can not create package with version (%d.%d.%d) that is less then existing one(%d.%d.%d)\n", major, minor, patch, f_major, f_minor, f_patch );
+
+		return 1;
+	}
+
+	free( pckg_dir );
 
 	return 0;
 }
@@ -1414,7 +1690,8 @@ int run_zip( char *package_name ) {
 
 	char src_path[ path_max_size ];
 	char t_cwd[ path_max_size ];
-	char *mode = "-q";
+	char mode[] = "-q";
+	char *path;
 
 	pid_t pid;
 
@@ -1423,6 +1700,10 @@ int run_zip( char *package_name ) {
 
 	} else if ( pid > 0 ) {
 		if ( DEBUG || debug ) printf( "Child with pid %d was forked\n", pid );
+		if ( wait( NULL ) > 0 ) {
+			end_clock( "Zipping package for OC23+" );
+		}
+
 		return 0;
 	}
 
@@ -1441,15 +1722,21 @@ int run_zip( char *package_name ) {
 		exit( 1 );
 	}
 
-	if ( DEBUG || debug ) printf( "Changing CWD to '%s'\n", pckg_tmp_dir );
-
 	if ( DEBUG || debug ) {
+		printf( "Changing CWD to '%s'\n", pckg_tmp_dir );
 		mode[ 1 ] = 'v';
 	}
 
-	// Create zip package one level up from CWD
-	if ( execlp( "zip", "zip", "-r", mode, "../package", ".", (char*)0 ) < 0 ) {
-		print_error( "run_zip: Failed to excec zip" );
+	path = get_package_dir();
+	strcat( path, package_name );
+
+	if ( DEBUG || debug ) fprintf( stderr, "Creating ZIP archive... '%s'\n", path );
+
+	start_clock();
+
+	// ZIP everything that are in CWD and save as path
+	if ( execlp( "zip", "zip", "-r", mode, path, ".", (char*)0 ) < 0 ) {
+		print_error( "run_zip: Failed to exec zip" );
 	}
 }
 
@@ -1461,6 +1748,8 @@ int run_zip( char *package_name ) {
 int make_dir( char *path, mode_t mode ) {
 	int debug = 0;
 
+	if ( DEBUG || debug ) fprintf( stderr, "Making directory '%s'...\n", path );
+
 	char t_path[ path_max_size ];
 	char t_cwd[ path_max_size ];
 	char *pos, *cur_pos;
@@ -1468,6 +1757,7 @@ int make_dir( char *path, mode_t mode ) {
 
 	int status = 0;
 
+	// CWD
 	memset( t_cwd, '\0', path_max_size );
 	getcwd( t_cwd, path_max_size );
 
@@ -1475,6 +1765,7 @@ int make_dir( char *path, mode_t mode ) {
 		chdir( "/" );
 	}
 
+	// Copy of path name without leading and railing slashes
 	memset( t_path, '\0', path_max_size );
 	strncpy( t_path, path, path_max_size );
 	trim( t_path, "/" );
@@ -1483,9 +1774,11 @@ int make_dir( char *path, mode_t mode ) {
 
 	if ( DEBUG || debug ) printf( "Makedir: Input folder: %s\n", t_path );
 
+	// Iterate over the path till we still have slash in it
 	while ( NULL != ( pos = strchr( cur_pos, '/' ) ) ) {
 		memset( part, '\0', path_max_size );
 		strncpy( part, cur_pos, pos - cur_pos );
+
 		if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
 
 		if( ( status = mkdir( part, mode ) ) < 0 && errno != EEXIST ) {
@@ -1493,12 +1786,15 @@ int make_dir( char *path, mode_t mode ) {
 		}
 
 		cur_pos = ++pos;
+
+		// Chdir into newly created directory to create next directory relative to it
 		chdir( part );
 	}
 
 	// Last part (or the only one)
 	memset( part, '\0', path_max_size );
 	strncpy( part, cur_pos, &t_path[ strlen( t_path ) ] - cur_pos );
+
 	if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
 
 	if( ( status = mkdir( part, mode ) ) < 0 && errno == EEXIST ) {
@@ -1528,6 +1824,7 @@ int fill_temp_package() {
 		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", files->current->name );
 
 		// Get file mode to be able to preserve it
+		// TODO: directories in filename will inherit permissions as well
 		if ( lstat( files->current->name, &sb ) < 0 ) {
 			fprintf( stderr, "Failed to stat file '%s': %s\n", files->current->name, strerror( errno ) );
 			return 1;
@@ -1549,8 +1846,17 @@ int fill_temp_package() {
 
 		memset( path, '\0', path_max_size );
 		strcpy( path, pckg_tmp_dir );
-		strcat( path, upload_folder );
-		strcat( path, files->current->name );
+
+		// Place OCMOD in package root
+		if ( 0 == strcmp( ".ocmod.xml", &files->current->name[ strlen( files->current->name ) - 10 ] ) ) {
+			if ( DEBUG || debug )fprintf( stderr, "OCMOD file detected '%s'\n", files->current->name );
+
+			strcat( path, strrchr( files->current->name, '/' ) );
+
+		} else {
+			strcat( path, upload_folder );
+			strcat( path, files->current->name );
+		}
 
 		if ( DEBUG || debug )fprintf( stderr, "Creating file '%s'\n", path );
 
@@ -1598,7 +1904,7 @@ int make_file( char *name, mode_t mode ) {
 
 		d_name = dir_name( name );
 
-		if ( make_dir( d_name, mode ) < 0 ) {
+		if ( make_dir( d_name, mode | S_IXUSR | S_IXGRP | S_IXOTH ) < 0 ) {
 			free( d_name );
 			return -1;
 		}
@@ -1816,7 +2122,7 @@ int init_filters() {
 	if ( DEBUG ) fprintf( stderr, "Initializing filters\n" );
 
 	filters = init_llist();
-	filters->addp( "translation", create_translation, filters );
+	filters->addp( "translation", fill_translation, filters );
 
 	return 1;
 }
@@ -1842,8 +2148,9 @@ struct llist *get_matches( const char *str ) {
 	struct llist *matches;
 	matches = init_llist();
 
-	for ( i = 0; i < REGEX_MATCH_COUNT; i++ ) {
+	for ( i = 0; i < REGEX_MATCH_COUNT, m[ i ].rm_so >= 0; i++ ) {
 		if ( -1 != m[ i ].rm_so ) {
+
 			if ( DEBUG || debug ) fprintf( stderr, "Match #%d\n", i  );
 			if ( DEBUG || debug ) fprintf( stderr, "Match start: %d, match end: %d\n", m[ i ].rm_so, m[ i ].rm_eo );
 
