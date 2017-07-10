@@ -10,7 +10,9 @@ char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
 char *pckg_name_templ = "%s-%s-%d.%d.%d.ocmod.zip";
 char *pckg_mane_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
-// char *pckg_mane_regex = "%s-[^-]+-([0-9]+)";
+char *lang_prefix_23 = "language/en-gb/";
+char *lang_prefix_20 = "language/english/";
+
 char *lang_dir;
 char* cwd;
 
@@ -75,6 +77,8 @@ int main( int argc, char **argv ) {
 	if ( NULL == lang_dir ) {
 		print_error( "Failed allocate memory for lang_dir variable" );
 	}
+
+	memset( lang_dir, '\0', path_max_size );
 
 	signal( SIGINT, &int_handler );
 	signal( SIGWINCH, &sig_winch );
@@ -1539,6 +1543,10 @@ int make_package() {
 	run_filters();
 	end_clock( "Filters" );
 
+	start_clock();
+	save_translation();
+	end_clock( "Translation" );
+
 	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
 
 	run_zip( pckg_name );
@@ -2018,8 +2026,8 @@ int fill_translation( FILE* f, char *name ) {
 
 	p = strrchr( name, '.' );
 
-	if ( NULL == p || strcmp( p, ".php" ) != 0 ) {
-		return 0; // Skip non-php files
+	if ( NULL == p || ( strcmp( p, ".php" ) != 0 && strcmp( p, ".xml" ) != 0 && strcmp( p, ".tpl" ) != 0 ) ) {
+		return 0; // Skip some files
 	}
 
 	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
@@ -2093,11 +2101,93 @@ int fetch_translation( FILE* f, struct llist* l ) {
 	return 0;
 }
 
+// TODO: implement catalog translation maybe
 int save_translation() {
+	int debug = 1;
+
+	if ( DEBUG || debug ) fprintf( stderr, "Saving translations...\n" );
+
+	int LEN = 1000; // Presume translation can have such length
+
+	FILE *from;
+	FILE *to;
+
+	char buff[ LEN ];
+	char from_name[ path_max_size ];
+	char to_name[ path_max_size ];
+
 	admin_t->merge( common_t, admin_t );
-	catalog_t->merge( common_t, catalog_t );
+
+	if ( DEBUG || debug ) fprintf( stderr, "Admin translation merged\n" );
+	// catalog_t->merge( common_t, catalog_t );
+
+	// Get admn language file and temp file name to save temp data (prefixed with ~)
+	strcpy( from_name, "admin/language/en-gb/" );
+	strcat( from_name, get_common_dir() );
+	strcat( from_name, code );
+	strcat( from_name, ".php" );
+
+	strcpy( to_name, pckg_tmp_dir );
+	strcat( to_name, upload_folder );
+	strcat( to_name, from_name );
+
+	if ( DEBUG || debug ) fprintf( stderr, "Source admin path: '%s'\n", from_name );
+	if ( DEBUG || debug ) fprintf( stderr, "Target admin path: '%s'\n", to_name );
+
+	if ( NULL == ( to = fopen( to_name, "w+" ) ) ) {
+		fprintf( stderr, "save_translation: failed to open file '%s': %s\n", to_name, strerror( errno ) );
+		exit( 1 );
+	}
+
+	fputs( "<php\n", to );
+
+	if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", to_name );
 
 
+	if ( NULL != ( from  = fopen( from_name, "r" ) ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", from_name );
+
+		while ( NULL != fgets( buff, LEN, from ) ) {
+
+			// Save predefined translations
+			if ( 1 == match( buff, "\\$_\\[\\s*'\\s*heading_title\\s*'", NULL, 0 ) ) {
+				continue;
+			}
+
+			if ( EOF == fputs( buff, to ) ) {
+				fprintf( stderr, "save_translation: file '%s' writing error: %s\n",to_name, strerror( errno ) );
+				exit( 1 );
+			}
+		}
+
+		if ( ferror( from ) ) {
+			fprintf( stderr, "save_translation: file '%s' reading error: %s\n", from_name, strerror( errno ) );
+			exit( 1 );
+		}
+
+	} else if ( ENOENT != errno ) {
+		fprintf( stderr, "save_translation: failed to open file '%s': %s\n", from_name, strerror( errno ) );
+		exit( 1 );
+	}
+
+	if ( NULL != admin_t->first ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Writing admin translations....\n" );
+
+		admin_t->current = admin_t->first;
+
+		while( admin_t->current ) {
+			sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)admin_t->current->value );
+
+			// Write to temp
+			fputs( buff, to );
+			admin_t->current = admin_t->current->next;
+		}
+	}
+
+	fclose( from );
+	fclose( to );
+
+	return 0;
 }
 
 int run_filters() {
@@ -2207,10 +2297,43 @@ int del_file_cb( char *name, struct stat *sb ) {
 
 int del_dir_cb( char *name, struct stat *sb ) {
 	if ( 0 != rmdir( name ) ) {
-		fprintf( stderr, "Failed fo unlink file '%s': %s\n", name, strerror( errno ) );
+		fprintf( stderr, "Failed to unlink file '%s': %s\n", name, strerror( errno ) );
 
 		return 1;
 	}
 
 	return 0;
+}
+
+char *get_common_dir() {
+	char *p;
+	char *end;
+
+	if ( 0 != strlen( lang_dir ) ) {
+		return lang_dir;
+	}
+
+	if ( NULL == files->first ) {
+		fprintf( stderr, "get_lang_dir: Files list is empty\n" );
+		return lang_dir;
+	}
+
+	files->current = files->first;
+
+	while ( files->current ) {
+		if ( NULL != ( p = strstr( files->current->name, "/controller/" ) ) ) {
+			if ( NULL != ( end = strrchr( p, '/' ) ) ) {
+
+				// With leading slash
+				strncpy( lang_dir, p + 12, end - p - 11 );
+				
+			} else {
+				print_error( "get_common_dir: failed to fetch common part from controller path '%s'\n", files->current->name );
+			}
+		}
+
+		files->current = files->current->next;
+	}
+
+	return lang_dir;
 }
