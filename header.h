@@ -83,11 +83,14 @@ struct llist* get_matches( const char* );
 int init_filters( void );
 int get_version( void );
 char *get_package_dir( void );
+int del_file_cb( char*, struct stat* );
+int del_dir_cb( char*, struct stat* );
 
 #define MAX_LINE 400
 #define DEBUG 0
 #define REGEX_MATCH_COUNT 10
 #define VERSION_SIZE 10
+#define BUFF_SIZE 4096
 
 #define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
 

@@ -382,8 +382,8 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 
 		if ( DEBUG || debug )fprintf( stderr, "Resulting path: %s\n", path );
 
-		if ( NULL != file_c && 0 == (*file_c)( path, &stat_buffer ) ) {
-			return 0;
+		if ( NULL != file_c && 0 != (*file_c)( path, &stat_buffer ) ) {
+			return 1;
 		}
 
 	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
@@ -397,10 +397,6 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 		if ( DEBUG || debug )fprintf( stderr, "Dir has been entered: %s\n", path );
 
 		depth++;
-
-		if ( NULL != dir_c && 0 == (*dir_c)( path, &stat_buffer ) ) {
-			return 0;
-		}
 
 		while ( NULL != ( item = readdir( dir ) ) ) {
 			if ( item->d_name[ 0 ] == '.' ) {
@@ -417,6 +413,11 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 			strcat( item_name, item->d_name ); 
 
 			iterate( item_name, file_c, dir_c, err_c );
+		}
+
+		// Run DIR callback after all FILE callbacks
+		if ( NULL != dir_c && 0 != (*dir_c)( path, &stat_buffer ) ) {
+			return 1;
 		}
 
 		closedir( dir );
@@ -1814,9 +1815,17 @@ int fill_temp_package() {
 	int src, dest, r_count;
 
 	char path[ path_max_size ];
-	char *buffer;
+	char buffer[ BUFF_SIZE ];
+	char copy[ path_max_size ];
+	int is_copy = 0;
 
 	struct stat sb;
+
+	memset( copy, '\0', path_max_size );
+
+	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files..." );
+
+	iterate( pckg_tmp_dir, del_file_cb, del_dir_cb, on_iterate_error );
 
 	files->current = files->first;
 
@@ -1827,13 +1836,6 @@ int fill_temp_package() {
 		// TODO: directories in filename will inherit permissions as well
 		if ( lstat( files->current->name, &sb ) < 0 ) {
 			fprintf( stderr, "Failed to stat file '%s': %s\n", files->current->name, strerror( errno ) );
-			return 1;
-		}
-
-		buffer = malloc( sb.st_blksize );
-
-		if ( NULL == buffer ) {
-			fprintf( stderr, "fill_temp_package: Failed to allocate memory for read buffer\n" );
 			return 1;
 		}
 
@@ -1851,6 +1853,11 @@ int fill_temp_package() {
 		if ( 0 == strcmp( ".ocmod.xml", &files->current->name[ strlen( files->current->name ) - 10 ] ) ) {
 			if ( DEBUG || debug )fprintf( stderr, "OCMOD file detected '%s'\n", files->current->name );
 
+			// Create OCMOD which need to be installed via Extension Installer
+			strcpy( copy, path );
+			strcat( copy, "install.xml" );
+
+			// Create OCMOD which can be installed directly
 			strcat( path, strrchr( files->current->name, '/' ) );
 
 		} else {
@@ -1858,6 +1865,7 @@ int fill_temp_package() {
 			strcat( path, files->current->name );
 		}
 
+	copy:
 		if ( DEBUG || debug )fprintf( stderr, "Creating file '%s'\n", path );
 
 		if ( ( dest = make_file( path, sb.st_mode ) ) < 0 ) {
@@ -1867,8 +1875,8 @@ int fill_temp_package() {
 
 		if ( DEBUG || debug )fprintf( stderr, "File '%s' created\n", path );
 
-		while ( ( r_count = read( src, buffer, sb.st_blksize ) ) > 0 ) {
-			if ( -1 == write( dest, buffer, sb.st_blksize ) ) {
+		while ( ( r_count = read( src, buffer, BUFF_SIZE ) ) > 0 ) {
+			if ( -1 == write( dest, buffer, r_count ) ) {
 				fprintf( stderr, "fill_temp_package: write file error: %s", strerror( errno ) );
 				return -1;
 			}
@@ -1876,8 +1884,23 @@ int fill_temp_package() {
 
 		if ( -1 == r_count ) {
 			fprintf( stderr, "fill_temp_package: read file error: %s", strerror( errno ) );
-			return -1;
+			exit( 1 );
 		}
+
+		close( dest );
+
+		if ( strlen( copy ) > 0 ) {
+			strcpy( path, copy );
+			memset( copy, '\0', path_max_size );
+
+			if ( lseek( src, 0, SEEK_SET ) == -1 ) {
+				print_error( "fill_temp_package: Failed to rewind source file" );
+			}
+
+			goto copy;
+		}
+
+		close( src );
 
 		files->current = files->current->next;
 	}
@@ -2170,4 +2193,24 @@ struct llist *get_matches( const char *str ) {
 	free( t_line );
 
 	return matches;
+}
+
+int del_file_cb( char *name, struct stat *sb ) {
+	if ( 0 != unlink( name ) ) {
+		fprintf( stderr, "Failed fo unlink file '%s': %s\n", name, strerror( errno ) );
+
+		return 1;
+	}
+
+	return 0;
+}
+
+int del_dir_cb( char *name, struct stat *sb ) {
+	if ( 0 != rmdir( name ) ) {
+		fprintf( stderr, "Failed fo unlink file '%s': %s\n", name, strerror( errno ) );
+
+		return 1;
+	}
+
+	return 0;
 }
