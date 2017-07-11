@@ -19,7 +19,7 @@ error.o: error.c
 			gcc -c -o error.o error.c
 
 $(TARGET): path.o structure.o args.o main.o error.o
-			gcc -o $(TARGET) path.o args.o structure.o main.o error.o -llibyaml
+			gcc -o $(TARGET) path.o args.o structure.o main.o error.o -llibyaml -lm
 install:
 			install $(TARGET) $(PREFIX)
 uninstall:

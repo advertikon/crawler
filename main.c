@@ -1403,7 +1403,7 @@ void sig_cld( int signo ) {
  *
  */
 int load_dependencies() {
-	int debug = 0;
+	int debug = 1;
 
 	if ( DEBUG || debug )fprintf( stderr, "Start loading dependencies\n" );
 
@@ -1704,7 +1704,6 @@ int make_package() {
 	start_clock();
 	save_translation( "catalog", catalog_t );
 	end_clock( "Translation catalog" );
-
 
 	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
 	run_zip( pckg_name );
@@ -2374,6 +2373,7 @@ int run_filters() {
 	int debug = 0;
 
 	FILE *f;
+	char *path;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Start filtering...\n" );
 
@@ -2388,6 +2388,14 @@ int run_filters() {
 	}
 
 	files->current = files->first;
+
+	strcpy( path, pckg_tmp_dir );
+	strcat( path, upload_folder );
+
+	if ( -1 == chdir( paht ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", path );
+		exit( 1 );
+	}
 
 	while ( files->current ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Opening file '%s'\n", files->current->name );
@@ -2420,6 +2428,7 @@ int init_filters() {
 
 	filters = init_llist();
 	filters->addp( "translation", fill_translation, filters );
+	filters->addp( "version", add_version, filters );
 
 	return 0;
 }
@@ -2617,6 +2626,8 @@ int make_oc20() {
 				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
 				exit( 1 );
 			}
+
+			content_to_oc20( new_name );
 		}
 
 		if ( NULL != ( p = strstr( files->current->name, "/template/extension/" ) ) ) {
@@ -2664,46 +2675,125 @@ int del_empty_dirs_cb( char *path, struct stat *sb ) {
 	return 0;
 }
 
+/**
+ * Changes classes names for controller and model to be OC20 compliant
+ *
+ */
 int content_to_oc20( char *name ) {
-	int debug = 1;
+	int debug = 0;
 
 	FILE *f;
 	char buff[ MAX_LINE ];
-	off_t pos;
-	char *matches;
-	soze_t len;
+	struct llist *matches;
+	size_t len;
 
-	if ( NULL == ( f = fopen( name, "r" ) ) ) {
+	if ( NULL == ( f = fopen( name, "r+" ) ) ) {
 		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
-		return 1;
+		exit( 1 );
 	}
 
+	if ( DEBUG || debug ) fprintf( stderr,  "File '%s' opened for modifications\n", name );
+
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
-		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, 0 ) ) {
-			if ( DEBUG || gebug ) {
+		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
+		if ( DEBUG || debug ) fprintf( stderr,  "Current offest: %ld\n", ftello( f ) );
+
+		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, REG_ICASE ) ) {
+			if ( DEBUG || debug ) {
 				fprintf( stderr, "Matched string '%s'\n", buff );
 				matches = get_matches( buff );
-				fprintf( stderr, "Match: '%s'\n", (char*)matches->get_value( "1", matches ) );
+				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
 			}
 
-			len = strlen( buff ) + 1;
+			len = strlen( buff );
 
-			strcpy( &buff[ m[ 1 ].rm_so ], &buff[ m[ 1 ] ].rm_eo );
+			// Slice 'extension' part from class name
+			strcpy( &buff[ m[ 1 ].rm_so ], &buff[ m[ 1 ].rm_eo ] );
 
-			if ( DEBUG || debug ) fprintf( "Result to be saved: '%s'\n", buff );
+			// Add spaces in place of removed characters up to original newline character
+			memset( &buff[ strlen( buff ) - 1 ], ' ', 9  );
 
-			if( -1 == fseeko( f, -1 * len, SEK_CUR ) ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
+			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", len );
+
+			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
 				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
 				exit( 1 );
 			}
 
-			fputs( f, buff );
+			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
 
-			if ( DEBUG || debug ) fprintf( "File '%s' was modified\n", name );
+			if ( EOF == fputs( buff, f ) ) {
+				fprintf( stderr, "content_to_oc20: failed to write back string to a file '%s': %s\n", name, strerror( errno ) );
+				exit( 1 );
+			}
+
+			if ( DEBUG || debug ) fprintf( stderr,  "File '%s' was modified\n", name );
 
 			break;
 		}
 	}
 
 	fclose( f );
+
+	return 0;
+}
+
+int add_version( FILE *f ) {
+	int debug = 1;
+
+	char buff[ MAX_LINE ];
+	struct llist *matches;
+	size_t len, str_len;
+	int c = 0;
+
+	rewind( f );
+
+	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
+		if ( c > 100 ) break;
+
+		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
+		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
+
+		if ( 0 == match( buff, "@version[:blank:]*([0-9]+\\.[0-9]+\\.[0-9]+[:blank:]*)", m, 0 ) ) {
+			if ( DEBUG || debug ) {
+				fprintf( stderr, "Matched string '%s'\n", buff );
+				matches = get_matches( buff );
+				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
+			}
+
+			len = ceil( log10( major ) ) + ceil( log10( minor ) ) + ceil( log10( patch ) ) + 2;
+			str_len = m[ 1 ].rm_eo = m[ 1 ].rm_so;
+
+			if ( str_len < len ) {
+				strcpy( buff, "0.0.0" );
+				memset( &buff[ 5 ], ' ', str_len - 5 );
+
+			} else {
+				sprintf( buff, "%d.%d.%d\n", major, minor, patch );
+				memset( &buff[ strlen( buff ) ], ' ', str_len - strlen( buff ) );
+			}
+
+			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
+			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", str_len );
+
+			if( -1 == fseeko( f, -1 * str_len, SEEK_CUR ) ) {
+				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
+				exit( 1 );
+			}
+
+			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
+
+			if ( EOF == fputs( buff, f ) ) {
+				fprintf( stderr, "content_to_oc20: failed to write back string to a file: %s\n", strerror( errno ) );
+				exit( 1 );
+			}
+
+			if ( DEBUG || debug ) fprintf( stderr,  "File was modified\n" );
+
+			break;
+		}
+
+		c++;
+	}
 }
