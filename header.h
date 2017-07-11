@@ -85,8 +85,11 @@ int get_version( void );
 char *get_package_dir( void );
 int del_file_cb( char*, struct stat* );
 int del_dir_cb( char*, struct stat* );
-int save_translation( void );
+int save_translation( char*, struct llist* );
 char *get_common_dir( void );
+int make_oc20( void );
+int del_empty_dirs_cb( char*, struct stat* );
+int content_to_oc20( char* );
 
 #define MAX_LINE 400
 #define DEBUG 0

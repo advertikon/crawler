@@ -58,7 +58,12 @@ static struct tms en_cpu;
 int main( int argc, char **argv ) {
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
-	getcwd( cwd, path_max_size );
+
+	if( NULL == getcwd( cwd, path_max_size ) ) {
+		fprintf( stderr, "main: failed to get CWD" );
+		exit( 1 );
+	}
+
 	cwd_length = strlen( cwd );
 
 	int i;
@@ -358,6 +363,17 @@ int usage() {
 	exit( 0 );
 }
 
+/**
+ * Iterates over FS structure
+ * Fires callbacks:
+ * - file_c - callback on each found file. Arguments absolute file path, struct stat. If returns
+ *           non-zero status function returns with status 1
+ * - dir_c - callback on each found directory, fires after all callbacks for inner files
+ *           Arguments: directory path (absolute, relative), struct stat. If returns non-zero
+ *           function returns with status 1;
+ * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
+ *           otherwise function returns with status 1
+ */
 int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 	int debug = 0;
 
@@ -369,7 +385,7 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 	struct stat stat_buffer;
 
 	if ( lstat( path, &stat_buffer ) < 0 ) {
-		if ( NULL != err_c && 1 == (*err_c)( path ) ) {
+		if ( NULL != err_c && 0 != (*err_c)( path ) ) {
 			exit( 1 );
 		}
 
@@ -434,6 +450,10 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 	return 0;
 }
 
+/**
+ * Checks item (file) and add it to package files list on success 
+ *
+ */
 int check_item(  char *name, struct stat* sb ) {
 	if ( DEBUG )fprintf( stderr, "Start checking item %s\n", name );
 
@@ -451,6 +471,10 @@ int check_item(  char *name, struct stat* sb ) {
 	return 0;
 }
 
+/**
+ * Add files from header source section to package files list
+ *
+ */
 int check_source(  char *name, struct stat* sb ) {
 	int debug = 0;
 
@@ -463,12 +487,21 @@ int check_source(  char *name, struct stat* sb ) {
 	files_count++;
 }
 
+/**
+ * Callback for FS iterator
+ * Prints error in STDERR end returns status 1
+ *
+ */
 int on_iterate_error( char *name ) {
 	fprintf( stderr, "%s: %s\n", strerror( errno ), name );
 
 	return 1;
 }
 
+/**
+ * YAML parser
+ *
+ */
 int parse_config( void ) {
   yaml_parser_t parser;
   yaml_event_t  event;
@@ -646,27 +679,27 @@ int parse_config( void ) {
   return 0;
 }
 
+/**
+ * Saves configuration file
+ *
+ *
+ */
 int save_config() {
 	char *raw_name = "~conf";
-	char *temp_name = "~temp";
-
-	int fd;
 
 	if ( 0 == config_is_dirty ) return 0;
 
-	FILE *tc = fopen( raw_name, "w" );
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "save_config: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
+		exit( 1 );
+	}
+
+	FILE *tc = fopen( raw_name, "w" ); // ~conf
 
 	if ( NULL == tc ) {
 		perror( "Failed to create temporary configuration file" );
 		return 1;
 	}
-
-	if( fd = open( config_name, O_RDONLY | O_CREAT ) < 0 ) {
-		fprintf( stderr, "Failed to create configuration file: %s", strerror( errno ) );
-		exit( 1 );
-	}
-
-	close( fd );
 
 	write_config_section( "include_dir", tc, include_dir );
 	write_config_section( "include_file", tc, include_file );
@@ -678,37 +711,25 @@ int save_config() {
 	fprintf( tc, "code : %s\n", code );
 	fprintf( tc, "major : %d\n", major );
 	fprintf( tc, "minor : %d\n", minor );
-	fprintf( tc, "patch : %d\n", patch );
+	fprintf( tc, "patch : %d\n", patch ); // Everything goes to ~conf
 
-	/* Save changes into disk */
-	if ( 0 == rename( config_name, temp_name ) ) { /* old config to temp name */
-		if ( 0 == rename( raw_name, config_name ) ) { /* new config to config name */
-			if ( 0 != unlink( temp_name ) ) { /* delete old config */
-				perror( "Failed to delete transient configuration file" );
-				return 5;
-			}
+	fclose( tc );
 
-			fputs( "Configuration file was updated\n", stdout );
-
-		} else {
-			perror( "Failed to set name for newly created configuration file" );
-
-			if ( rename( temp_name, config_name ) ) {
-				fputs( "Old configuration file is restored\n", stderr );
-				return 3;
-
-			} else {
-				perror( "Failed to restore old configuration file" );
-				return 4;
-			}
-		}
-
-	} else {
-		perror( "Failed to save new configurations. Failed set temporary name for configuration file" );
-		return 2;
+	if ( -1 == rename( raw_name, config_name ) ) {
+		fprintf( stderr, "save_config: failed to rename '%s' to '%s': %s", raw_name, config_name, strerror( errno ) );
+		exit( 1 );
 	}
+
+	fprintf( stderr, "Configurations were updated\n" );
+
+	return 0;
 }
 
+/**
+ * Writes configuration from configuration structure into file
+ *
+ *
+ */
 int write_config_section( char* name, FILE* stream, struct llist* l ) {
 	if ( NULL != l && l->first ) {
 		l->current = l->first;
@@ -724,6 +745,10 @@ int write_config_section( char* name, FILE* stream, struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Mark start of delete configuration action
+ *
+ */
 int start_del( struct llist* l ) {
 	if ( l && l->first ) {
 		printf(
@@ -742,6 +767,10 @@ int start_del( struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Prints list of configuration list that can be deleted
+ *
+ */
 int print_del_list( struct llist* l ) {
 	if ( NULL == l || NULL == l->first ) return 1;
 
@@ -764,6 +793,10 @@ int print_del_list( struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Marks start of add configuration action
+ *
+ */
 int start_add( struct llist* l ) {
 	printf( "Type in one item at line\n" );
 	printf( "To save changes print 's', to discard changes - 'q'\n" );
@@ -781,6 +814,10 @@ int start_add( struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Adds item to configuration list
+ *
+ */
 int add_to(  char *item ) {
 	if ( NULL != temp ) {
 		printf( "Add item >> " );
@@ -792,6 +829,10 @@ int add_to(  char *item ) {
 	return 1;
 }
 
+/**
+ * Deletes item from configuration list
+ *
+ */
 int del_from(  char *name, struct llist* l ) {
 	if ( NULL != temp ) {
 		temp->add( NULL, name, temp );
@@ -804,6 +845,10 @@ int del_from(  char *name, struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Prints out a list of available commands
+ *
+ */
 int show_commands() {
 	char *line = malloc( win_size.ws_col + 1 );
 	memset( line, '-', win_size.ws_col );
@@ -874,6 +919,10 @@ int show_commands() {
 	free( line );
 }
 
+/**
+ * Action switcher after action confirmation action (eg save, delete)
+ *
+ */
 int confirmed_operation() {
 	switch ( command ) {
 	case C_ADD_INCL_FOLDER:
@@ -919,6 +968,10 @@ int confirmed_operation() {
 	return 0;
 }
 
+/**
+ * Merges config list with temporary configuration list
+ *
+ */
 int add_to_config( struct llist* l ) {
 	l->merge( temp, l );
 	config_is_dirty = 1;
@@ -926,6 +979,10 @@ int add_to_config( struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Removes items from configuration list, which present in temporary configuration list
+ *
+ */
 int remove_from_config( struct llist* l ) {
 	if ( NULL != l && NULL != l->first ) {
 		l->current = l->first;
@@ -948,6 +1005,10 @@ int remove_from_config( struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Mark operation add ended
+ *
+ */
 int end_operation() {
 	temp->empty( temp );
 	wait_confirm = 0;
@@ -984,6 +1045,10 @@ Sigfunc *signal( int signo, Sigfunc *func ) {
 	return( oact.sa_handler );
 }
 
+/**
+ * Interrupt signal handler
+ *
+ */
 void int_handler( int s ) {
 	if ( s == SIGINT ) {
 		printf( "\nInterrupted\n" );
@@ -992,6 +1057,15 @@ void int_handler( int s ) {
 	}
 }
 
+/**
+ * Checks whether or not include file in files list
+ * Firstly checks files to be present in files include list. If present - check
+ * Then checks if file is present in excluded files list. If present - fail
+ * Then checks if path in included folders list is longer than path in excluded folders list. If so - check
+ * Then checks if path is present in excluded folders list. If so - fail
+ * Then checks if path is present in included regex list and is not present i excluded regex list. Check
+ * Default: fail
+ */
 int check_file(  char *name ) {
 	int debug = 0;
 
@@ -1052,6 +1126,10 @@ int check_file(  char *name ) {
 	return 1;
 }
 
+/**
+ * Returns longest part
+ *
+ */
 int collide_length(  char *name, struct llist *l, int *max ) {
 	int span = 0;
 	int cur_str_len = 0;
@@ -1085,6 +1163,10 @@ int collide_length(  char *name, struct llist *l, int *max ) {
 	return 0;
 }
 
+/**
+ * Calculates strings intersections
+ *
+ */
 int collide_span(  char *h,  char *n ) {
 	int i;
 	int c = 0;
@@ -1150,6 +1232,10 @@ int match(  char* str,  char* pattern, regmatch_t *m, int flags ) {
 	return status;
 }
 
+/**
+ * Returns error from regex library
+ *
+ */
 char *get_regerror ( int errcode, regex_t *compiled ) {
 	size_t length = regerror ( errcode, compiled, NULL, 0 );
 	char *buffer = malloc ( length );
@@ -1163,13 +1249,17 @@ char *get_regerror ( int errcode, regex_t *compiled ) {
 	return buffer;
 }
 
+/**
+ * Checks path against list of regexps
+ *
+ */
 int check_regexp(  char* str, struct llist* l ) {
 	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regexp\n", str );
 	if ( l->first ) {
 		l->current = l->first;
 
 		while ( l->current ) {
-			if ( DEBUG )fprintf( stderr, "Regexp: '%s'\n", l->current->as_string( l->current ) );
+			if ( DEBUG )fprintf( stderr, "Regex: '%s'\n", l->current->as_string( l->current ) );
 			if ( match( str, l->current->value, NULL, 0 ) == 0 ) {
 				if ( DEBUG )fprintf( stderr, "Match\n" );
 				return 0;
@@ -1189,10 +1279,18 @@ int check_regexp(  char* str, struct llist* l ) {
 	return 1;
 }
 
+/**
+ * Starts clock measurements
+ *
+ */
 void start_clock() {
     st_time = times( &st_cpu );
 }
 
+/**
+ * Ends clock measurements and print out the result
+ *
+ */
 void end_clock( char *msg ) {
     en_time = times( &en_cpu );
 
@@ -1211,6 +1309,10 @@ void end_clock( char *msg ) {
     );
 }
 
+/**
+ * Prints out contents of configuration file
+ *
+ */
 int print_config() {
 	FILE *stream = fopen( config_name, "r" );
 	char buffer[ MAX_LINE ];
@@ -1227,14 +1329,21 @@ int print_config() {
 			perror( "Print configuration" );
 			exit( 1 );
 		}
+
+		fclose( stream );
 	}
 
 	return 0;
 }
 
+/**
+ * Print inmemory list of package files
+ *
+ */
 int print_files() {
 	if ( NULL == files->first ) {
 		printf( "Lust is empty\n" );
+
 	} else {
 		files->current = files->first;
 
@@ -1249,6 +1358,10 @@ int print_files() {
 	return 0;
 }
 
+/**
+ * Populates static variables with current terminal window sizes
+ *
+ */
 static void set_winsize() {
 	if ( 0 == isatty( STDIN_FILENO ) ) {
 		print_error( "STDIN is not a terminal device" );
@@ -1261,10 +1374,18 @@ static void set_winsize() {
 	// printf( "%d rows, %d columns\n", win_size.ws_row, win_size.ws_col );
 }
 
+/**
+ * Terminal window change size signal handler
+ *
+ */
 static void sig_winch( int signo ) {
 	set_winsize();
 }
 
+/**
+ * SIGCHL handler
+ *
+ */
 void sig_cld( int signo ) {
 	int status;
 	pid_t pid;
@@ -1276,6 +1397,11 @@ void sig_cld( int signo ) {
 	printf( "Child with PID %d was terminated with status code %d\n", pid, status );
 }
 
+/**
+ * Loads dependency files form source header sections
+ *
+ *
+ */
 int load_dependencies() {
 	int debug = 0;
 
@@ -1376,10 +1502,18 @@ int load_dependencies() {
 	}
 }
 
+/**
+ * Trims the string. Default behavior - trim whitespaces
+ *
+ */
 char *trim( char *str,  char *ch ) {
 	return ltrim( rtrim( str, ch ), ch );
 }
 
+/**
+ * Trims left part of the string. Default behavior - trim whitespaces
+ *
+ */
 char *ltrim( char *str,  char *ch ) {
 	int len = strlen( str );
 	int ch_len = 0;
@@ -1427,6 +1561,10 @@ char *ltrim( char *str,  char *ch ) {
 	return str;
 }
 
+/**
+ * Trims right part of the string. Default behavior - trim whitespaces
+ *
+ */
 char *rtrim( char *str,  char *ch ) {
 	int len = strlen( str );
 	int ch_len = 0;
@@ -1464,6 +1602,10 @@ char *rtrim( char *str,  char *ch ) {
 	return str;
 }
 
+/**
+ * Checks if entry is a regular file
+ *
+ */
 int is_file(  char *name ) {
 	struct stat stat_buffer;
 
@@ -1474,6 +1616,10 @@ int is_file(  char *name ) {
 	return  S_ISREG( stat_buffer.st_mode );
 }
 
+/**
+ * Checks if an entry is a directory
+ *
+ */
 int is_dir(  char *name ) {
 	struct stat stat_buffer;
 
@@ -1484,6 +1630,10 @@ int is_dir(  char *name ) {
 	return  S_ISDIR( stat_buffer.st_mode );
 }
 
+/**
+ * Prepends CWD to the path
+ *
+ */
 char* add_cwd( char* path ) {
 	char t[ path_max_size ];
 	memset( t, '\0', path_max_size );
@@ -1495,6 +1645,10 @@ char* add_cwd( char* path ) {
 	return path;
 }
 
+/**
+ * Makes package
+ *
+ */
 int make_package() {
 	int s;
 	char u_folder[ path_max_size ];
@@ -1544,12 +1698,18 @@ int make_package() {
 	end_clock( "Filters" );
 
 	start_clock();
-	save_translation();
-	end_clock( "Translation" );
+	save_translation( "admin", admin_t );
+	end_clock( "Translation admin" );
+
+	start_clock();
+	save_translation( "catalog", catalog_t );
+	end_clock( "Translation catalog" );
+
 
 	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
-
 	run_zip( pckg_name );
+
+	make_oc20();
 
 	free( pckg_dir );
 
@@ -1577,6 +1737,11 @@ char *get_package_dir() {
 	return pckg_dir;
 }
 
+/**
+ * Get next version numbers for the package. Gets values form the config and checks them against
+ * saved packages
+ *
+ */
 int get_version() {
 	int debug = 0;
 
@@ -1666,7 +1831,7 @@ int get_version() {
 		}
 
 		if ( major == f_major && minor == f_minor && patch == f_patch && 0 == is_empty_dir) {
-			if ( DEBUG || debug ) fprintf( stderr, "Patch number automatically incremented\n" );
+			if ( DEBUG || debug ) fprintf( stderr, "Patch number was automatically incremented\n" );
 
 			patch++;
 			config_is_dirty = 1;
@@ -1817,6 +1982,10 @@ out:
 	return status;
 }
 
+/**
+ * Fills in temporary package structure before ZIPping
+ *
+ */
 int fill_temp_package() {
 	int debug = 0;
 
@@ -2102,10 +2271,15 @@ int fetch_translation( FILE* f, struct llist* l ) {
 }
 
 // TODO: implement catalog translation maybe
-int save_translation() {
-	int debug = 1;
+/**
+* Saves translation file into temporary directory
+* name - admin or catalog
+* l - list off all the translation for specific side
+*/
+int save_translation( char *name, struct llist *l) {
+	int debug = 0;
 
-	if ( DEBUG || debug ) fprintf( stderr, "Saving translations...\n" );
+	if ( DEBUG || debug ) fprintf( stderr, "Saving translations for %s...\n", name );
 
 	int LEN = 1000; // Presume translation can have such length
 
@@ -2116,33 +2290,37 @@ int save_translation() {
 	char from_name[ path_max_size ];
 	char to_name[ path_max_size ];
 
-	admin_t->merge( common_t, admin_t );
+	l->merge( common_t, l );
 
-	if ( DEBUG || debug ) fprintf( stderr, "Admin translation merged\n" );
-	// catalog_t->merge( common_t, catalog_t );
+	if ( DEBUG || debug ) fprintf( stderr, "%s translation merged\n", name );
 
-	// Get admn language file and temp file name to save temp data (prefixed with ~)
-	strcpy( from_name, "admin/language/en-gb/" );
-	strcat( from_name, get_common_dir() );
-	strcat( from_name, code );
-	strcat( from_name, ".php" );
+	strcpy( from_name, name );               // admin
+	strcat( from_name, "/language/en-gb/" ); // admin/language/en-gb/
+	strcat( from_name, get_common_dir() );   // admin/language/en-gb/extension/module/
 
-	strcpy( to_name, pckg_tmp_dir );
-	strcat( to_name, upload_folder );
-	strcat( to_name, from_name );
+	strcpy( to_name, pckg_tmp_dir );         // .temp_dir/
+	strcat( to_name, upload_folder );        // .temp_dir/upload/
+	strcat( to_name, from_name );            // .temp_dir/upload/admin/language/en-gb/extension/module/
 
-	if ( DEBUG || debug ) fprintf( stderr, "Source admin path: '%s'\n", from_name );
-	if ( DEBUG || debug ) fprintf( stderr, "Target admin path: '%s'\n", to_name );
+	// If folder doesn't exist
+	make_dir( to_name, 0775 );
+
+	strcat( from_name, code );              // admin/language/en-gb/extension/module/extension_name
+	strcat( to_name, code );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name
+	strcat( from_name, ".php" );            // admin/language/en-gb/extension/module/extension_name.php
+	strcat( to_name, ".php" );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name.php
+
+	if ( DEBUG || debug ) fprintf( stderr, "Source path: '%s'\n", from_name );
+	if ( DEBUG || debug ) fprintf( stderr, "Target path: '%s'\n", to_name );
 
 	if ( NULL == ( to = fopen( to_name, "w+" ) ) ) {
 		fprintf( stderr, "save_translation: failed to open file '%s': %s\n", to_name, strerror( errno ) );
 		exit( 1 );
 	}
 
-	fputs( "<php\n", to );
+	fputs( "<?php\n", to );
 
 	if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", to_name );
-
 
 	if ( NULL != ( from  = fopen( from_name, "r" ) ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", from_name );
@@ -2170,17 +2348,15 @@ int save_translation() {
 		exit( 1 );
 	}
 
-	if ( NULL != admin_t->first ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Writing admin translations....\n" );
+	if ( NULL != l->first ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Writing translations....\n" );
 
-		admin_t->current = admin_t->first;
+		l->current = l->first;
 
-		while( admin_t->current ) {
-			sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)admin_t->current->value );
-
-			// Write to temp
+		while( l->current ) {
+			sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)l->current->value );
 			fputs( buff, to );
-			admin_t->current = admin_t->current->next;
+			l->current = l->current->next;
 		}
 	}
 
@@ -2190,6 +2366,10 @@ int save_translation() {
 	return 0;
 }
 
+/**
+ * Runs runs all registered filters on each package files in turn
+ *
+ */
 int run_filters() {
 	int debug = 0;
 
@@ -2231,13 +2411,17 @@ int run_filters() {
 	}
 }
 
+/**
+ * Registers filters
+ *
+ */
 int init_filters() {
 	if ( DEBUG ) fprintf( stderr, "Initializing filters\n" );
 
 	filters = init_llist();
 	filters->addp( "translation", fill_translation, filters );
 
-	return 1;
+	return 0;
 }
 
 /**
@@ -2285,26 +2469,38 @@ struct llist *get_matches( const char *str ) {
 	return matches;
 }
 
+/**
+ * FS iterator callback to empty a folder. Unlinks files
+ *
+ */
 int del_file_cb( char *name, struct stat *sb ) {
 	if ( 0 != unlink( name ) ) {
-		fprintf( stderr, "Failed fo unlink file '%s': %s\n", name, strerror( errno ) );
-
-		return 1;
-	}
-
-	return 0;
-}
-
-int del_dir_cb( char *name, struct stat *sb ) {
-	if ( 0 != rmdir( name ) ) {
 		fprintf( stderr, "Failed to unlink file '%s': %s\n", name, strerror( errno ) );
 
-		return 1;
+		exit( 1 );
 	}
 
 	return 0;
 }
 
+/**
+ * FS iterator callback to empty a folder. Deletes files
+ *
+ */
+int del_dir_cb( char *name, struct stat *sb ) {
+	if ( 0 != rmdir( name ) ) {
+		fprintf( stderr, "Failed to remove directory '%s': %s\n", name, strerror( errno ) );
+
+		exit( 1 );
+	}
+
+	return 0;
+}
+
+/**
+ * Returns common part for package files. Eg extension/module
+ *
+ */
 char *get_common_dir() {
 	char *p;
 	char *end;
@@ -2314,7 +2510,7 @@ char *get_common_dir() {
 	}
 
 	if ( NULL == files->first ) {
-		fprintf( stderr, "get_lang_dir: Files list is empty\n" );
+		fprintf( stderr, "get_common_dir: Files list is empty\n" );
 		return lang_dir;
 	}
 
@@ -2336,4 +2532,178 @@ char *get_common_dir() {
 	}
 
 	return lang_dir;
+}
+
+/**
+ * Makes changes to temporary files structure to make package conforms OC20 restrictions
+ *
+ */
+int make_oc20() {
+	int debug = 1;
+
+	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
+
+	char t_cwd[ path_max_size ];
+	char *p;
+	char new_name[ path_max_size ];
+	char *dir;
+
+	strcpy( t_cwd, pckg_tmp_dir );
+	strcat( t_cwd, upload_folder );
+
+
+	if ( NULL == files->first ) {
+		fprintf( stderr, "make_oc20: FIles list is empty, nothing to process\n" );
+		return 1;
+	}
+
+	files->current = files->first;
+
+	if ( -1 == chdir( t_cwd ) ) {
+		fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", t_cwd, strerror( errno ) );
+		exit( 1 );
+	}
+
+	while ( NULL != files->current ) {
+
+		if ( NULL != ( p = strstr( files->current->name, "/controller/extension/" ) ) ) {
+			memset( new_name, '\0', path_max_size );
+			strncpy( new_name, files->current->name, p - files->current->name  + 12 ); // from the start up to leading slash
+			strcat( new_name, p + 22 );
+
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+
+			dir = dir_name( new_name );
+			make_dir( dir, 0775 );
+			free( dir );
+
+			if ( -1 == rename( files->current->name, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+				exit( 1 );
+			}
+
+			content_to_oc20( new_name );
+		}
+
+		if ( NULL != ( p = strstr( files->current->name, "/en-gb/extension/" ) ) ) {
+			memset( new_name, '\0', path_max_size );
+			strncpy( new_name, files->current->name, p - files->current->name  + 7 ); // from the start up to leading slash
+			strcat( new_name, p + 17 );
+
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+
+			dir = dir_name( new_name );
+			make_dir( dir, 0775 );
+			free( dir );
+			
+			if ( -1 == rename( files->current->name, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+				exit( 1 );
+			}
+		}
+
+		if ( NULL != ( p = strstr( files->current->name, "/model/extension/" ) ) ) {
+			memset( new_name, '\0', path_max_size );
+			strncpy( new_name, files->current->name, p - files->current->name  + 7 ); // from the start up to leading slash
+			strcat( new_name, p + 17 );
+
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+
+			dir = dir_name( new_name );
+			make_dir( dir, 0775 );
+			free( dir );
+			
+			if ( -1 == rename( files->current->name, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+				exit( 1 );
+			}
+		}
+
+		if ( NULL != ( p = strstr( files->current->name, "/template/extension/" ) ) ) {
+			memset( new_name, '\0', path_max_size );
+			strncpy( new_name, files->current->name, p - files->current->name  + 10 ); // from the start up to leading slash
+			strcat( new_name, p + 20 );
+
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+
+			dir = dir_name( new_name );
+			make_dir( dir, 0775 );
+			free( dir );
+			
+			if ( -1 == rename( files->current->name, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+				exit( 1 );
+			}
+		}
+
+
+		files->current = files->current->next;
+	}
+
+	// Remove all empty directories
+	iterate( ".", NULL, del_empty_dirs_cb, on_iterate_error );
+
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
+		exit( 1 );
+	}
+
+	return 0;
+}
+
+/**
+ * Directory callback for delete empty folders iterator
+ *
+ */
+int del_empty_dirs_cb( char *path, struct stat *sb ) {
+		if ( rmdir( path ) && ENOTEMPTY != errno ) {
+		fprintf( stderr, "del_empty_dirs_cb: path: '%s', error: %s\n", path, strerror( errno ) );
+		return 1;
+	}
+
+	return 0;
+}
+
+int content_to_oc20( char *name ) {
+	int debug = 1;
+
+	FILE *f;
+	char buff[ MAX_LINE ];
+	off_t pos;
+	char *matches;
+	soze_t len;
+
+	if ( NULL == ( f = fopen( name, "r" ) ) ) {
+		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
+		return 1;
+	}
+
+	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
+		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, 0 ) ) {
+			if ( DEBUG || gebug ) {
+				fprintf( stderr, "Matched string '%s'\n", buff );
+				matches = get_matches( buff );
+				fprintf( stderr, "Match: '%s'\n", (char*)matches->get_value( "1", matches ) );
+			}
+
+			len = strlen( buff ) + 1;
+
+			strcpy( &buff[ m[ 1 ].rm_so ], &buff[ m[ 1 ] ].rm_eo );
+
+			if ( DEBUG || debug ) fprintf( "Result to be saved: '%s'\n", buff );
+
+			if( -1 == fseeko( f, -1 * len, SEK_CUR ) ) {
+				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
+				exit( 1 );
+			}
+
+			fputs( f, buff );
+
+			if ( DEBUG || debug ) fprintf( "File '%s' was modified\n", name );
+
+			break;
+		}
+	}
+
+	fclose( f );
 }
