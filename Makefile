@@ -19,7 +19,7 @@ error.o: error.c
 			gcc -c -o error.o error.c
 
 $(TARGET): path.o structure.o args.o main.o error.o
-			gcc -o $(TARGET) path.o args.o structure.o main.o error.o -llibyaml -lm -I /usr/include/libxml2 -l libxml2
+			gcc -o $(TARGET) path.o args.o structure.o main.o error.o -llibyaml -lm -I /usr/include/libxml2 -lxml2
 install:
 			install $(TARGET) $(PREFIX)
 uninstall:
