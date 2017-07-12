@@ -19,6 +19,9 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <math.h>
+#include <libxml/xmlmemory.h>
+#include <libxml/parser.h>
+#include <libxml/tree.h>
 
 #include "error.h"
 #include "args.h"
@@ -91,7 +94,9 @@ char *get_common_dir( void );
 int make_oc20( void );
 int del_empty_dirs_cb( char*, struct stat* );
 int content_to_oc20( char* );
-int add_version( FILE * ); 
+int add_version( FILE * );
+int make_vqmod();
+int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
 
 #define MAX_LINE 400
 #define DEBUG 0

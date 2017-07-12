@@ -681,7 +681,7 @@ int parse_config( void ) {
 
 /**
  * Saves configuration file
- *
+ * CHDIR to CWD
  *
  */
 int save_config() {
@@ -1337,7 +1337,7 @@ int print_config() {
 }
 
 /**
- * Print inmemory list of package files
+ * Print in-memory list of package files
  *
  */
 int print_files() {
@@ -1399,11 +1399,11 @@ void sig_cld( int signo ) {
 
 /**
  * Loads dependency files form source header sections
- *
+ * CHDIR to CWD
  *
  */
 int load_dependencies() {
-	int debug = 1;
+	int debug = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Start loading dependencies\n" );
 
@@ -1417,6 +1417,11 @@ int load_dependencies() {
 	int reg_len;
 	temp->empty( temp );
 	char t_line[ path_max_size ];
+
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+		exit( 1 );
+	}
 
 	// Files not empty
 	if ( files->first ) {
@@ -1490,8 +1495,11 @@ int load_dependencies() {
 				in_header = 0;
 			}
 
-			if ( DEBUG || debug )fprintf( stderr, "Next loop\n" );
-			if ( DEBUG || debug )fprintf( stderr, "Next item: %p\n", files->current->next );
+			if ( DEBUG || debug ) {
+				fprintf( stderr, "Next loop\n" );
+				fprintf( stderr, "Next item: %p\n", files->current->next );
+			}
+
 			files->current = files->current->next;
 		}
 
@@ -1636,7 +1644,7 @@ int is_dir(  char *name ) {
  */
 char* add_cwd( char* path ) {
 	char t[ path_max_size ];
-	memset( t, '\0', path_max_size );
+	// memset( t, '\0', path_max_size );
 	strcpy( t, cwd );
 	strcat( t, "/" );
 	strcat( t, path );
@@ -1647,7 +1655,7 @@ char* add_cwd( char* path ) {
 
 /**
  * Makes package
- *
+ * CHDIR to CWD
  */
 int make_package() {
 	int s;
@@ -1666,6 +1674,11 @@ int make_package() {
 		return 1;
 	}
 
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+		exit( 1 );
+	}
+
 	memset( pckg_name, '\0', path_max_size );
 	memset( version, '\0', VERSION_SIZE );
 
@@ -1673,6 +1686,7 @@ int make_package() {
 		return 1;
 	}
 
+	// Directory to store packages in
 	pckg_dir = get_package_dir();
 
 	if ( make_dir( pckg_dir, 0775 ) < 0 ) {
@@ -1680,6 +1694,7 @@ int make_package() {
 		exit( 1 );
 	}
 
+	// Upload folder of temporary package structure
 	memset( u_folder, '\0', path_max_size );
 	strcpy( u_folder, pckg_tmp_dir );
 	strcat( u_folder, upload_folder );
@@ -1691,7 +1706,11 @@ int make_package() {
 
 	start_clock();
 	fill_temp_package();
-	end_clock( "Fill in package structure for OC23+" );
+	end_clock( "Fill in temp structure" );
+
+	start_clock();
+	make_vqmod();
+	end_clock( "VQMOD" );
 
 	start_clock();
 	run_filters();
@@ -1709,6 +1728,8 @@ int make_package() {
 	run_zip( pckg_name );
 
 	make_oc20();
+	sprintf( pckg_name, pckg_name_templ, code, "OC20", major, minor, patch );
+	run_zip( pckg_name );
 
 	free( pckg_dir );
 
@@ -1862,11 +1883,12 @@ int run_zip( char *package_name ) {
 	int debug = 0;
 
 	char src_path[ path_max_size ];
-	char t_cwd[ path_max_size ];
 	char mode[] = "-q";
 	char *path;
 
 	pid_t pid;
+
+	if ( DEBUG || debug ) fprintf( stderr, "ZIPpping package '%s'....\n", package_name );
 
 	if ( ( pid = fork() ) < 0 ) {
 		print_error( "Failed to fork process for zip" );
@@ -1880,13 +1902,10 @@ int run_zip( char *package_name ) {
 		return 0;
 	}
 
-	memset( src_path, '\0', path_max_size );
-	memset( t_cwd, '\0', path_max_size );
-
 	strcpy( src_path, pckg_tmp_dir );
-	
-	if ( NULL == getcwd( t_cwd, path_max_size ) ) {
-		fprintf( stderr, "run_zip: failed to get current working directory to '%s': %s", pckg_tmp_dir, strerror( errno ) );
+
+	if ( 0 != chdir( cwd ) ) {
+		fprintf( stderr, "run_zip: failed to change working directory to '%s': %s", cwd, strerror( errno ) );
 		exit( 1 );
 	}
 
@@ -1983,7 +2002,7 @@ out:
 
 /**
  * Fills in temporary package structure before ZIPping
- *
+ * Implied CWD
  */
 int fill_temp_package() {
 	int debug = 0;
@@ -2186,25 +2205,39 @@ char *dir_name( char *path ) {
  *
  */
 int fill_translation( FILE* f, char *name ) {
+	int debug = 0;
+
 	char *p;
 
+	if ( DEBUG || debug ) fprintf( stderr, "File: '%s'\n", name );
+
 	if ( NULL != strstr( name, "/language/" ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Not language - skip\n" );
+
 		return 0; // Skip language files
 	}
 
 	p = strrchr( name, '.' );
 
 	if ( NULL == p || ( strcmp( p, ".php" ) != 0 && strcmp( p, ".xml" ) != 0 && strcmp( p, ".tpl" ) != 0 ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Wrong type - skip\n" );
+
 		return 0; // Skip some files
 	}
 
 	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Catalog side\n" );
+
 		fetch_translation( f, catalog_t );
 
 	} else if ( 0 == ( strncmp( name, "admin/", 6 ) ) ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Admin side\n" );
+
 		fetch_translation( f, admin_t );
 
 	} else {
+		if ( DEBUG || debug ) fprintf( stderr, "Common side\n" );
+
 		fetch_translation( f, common_t );
 	}
 
@@ -2274,8 +2307,10 @@ int fetch_translation( FILE* f, struct llist* l ) {
 * Saves translation file into temporary directory
 * name - admin or catalog
 * l - list off all the translation for specific side
+*
+* CHDIR to CWD
 */
-int save_translation( char *name, struct llist *l) {
+int save_translation( char *name, struct llist *l ) {
 	int debug = 0;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Saving translations for %s...\n", name );
@@ -2288,6 +2323,11 @@ int save_translation( char *name, struct llist *l) {
 	char buff[ LEN ];
 	char from_name[ path_max_size ];
 	char to_name[ path_max_size ];
+
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+		exit( 1 );
+	}
 
 	l->merge( common_t, l );
 
@@ -2309,8 +2349,9 @@ int save_translation( char *name, struct llist *l) {
 	strcat( from_name, ".php" );            // admin/language/en-gb/extension/module/extension_name.php
 	strcat( to_name, ".php" );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name.php
 
-	if ( DEBUG || debug ) fprintf( stderr, "Source path: '%s'\n", from_name );
-	if ( DEBUG || debug ) fprintf( stderr, "Target path: '%s'\n", to_name );
+	if ( DEBUG || debug ) {
+		fprintf( stderr, "Source path: '%s'\nTarget path: '%s'\nCWD: '%s'\n", from_name, to_name, cwd );
+	}
 
 	if ( NULL == ( to = fopen( to_name, "w+" ) ) ) {
 		fprintf( stderr, "save_translation: failed to open file '%s': %s\n", to_name, strerror( errno ) );
@@ -2367,13 +2408,13 @@ int save_translation( char *name, struct llist *l) {
 
 /**
  * Runs runs all registered filters on each package files in turn
- *
+ * CHDIR to temp folder and then back to CWD
  */
 int run_filters() {
 	int debug = 0;
 
 	FILE *f;
-	char *path;
+	char path[ path_max_size ];
 
 	if ( DEBUG || debug ) fprintf( stderr, "Start filtering...\n" );
 
@@ -2389,10 +2430,15 @@ int run_filters() {
 
 	files->current = files->first;
 
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+		exit( 1 );
+	}
+
 	strcpy( path, pckg_tmp_dir );
 	strcat( path, upload_folder );
 
-	if ( -1 == chdir( paht ) ) {
+	if ( -1 == chdir( path ) ) {
 		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", path );
 		exit( 1 );
 	}
@@ -2400,10 +2446,21 @@ int run_filters() {
 	while ( files->current ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Opening file '%s'\n", files->current->name );
 
-		if ( NULL == ( f = fopen( files->current->name, "r+" ) ) ) {
-			fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
-			return 1;
+		if ( NULL != strstr( files->current->name, "ocmod.xml" ) && NULL != strstr( files->current->name, "system/")  ) {
+
+			// system/name.ocmod.xml is now ../install.xml
+			if ( NULL == ( f = fopen( "../install.xml", "r+" ) ) ) {
+				fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
+				return 1;
+			}
+
+		} else {
+			if ( NULL == ( f = fopen( files->current->name, "r+" ) ) ) {
+				fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
+				return 1;
+			}
 		}
+
 
 		filters->current = filters->first;
 
@@ -2416,6 +2473,11 @@ int run_filters() {
 
 		files->current = files->current->next;
 		fclose( f );
+	}
+
+	if ( -1 == chdir( cwd ) ) {
+		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+		exit( 1 );
 	}
 }
 
@@ -2548,7 +2610,7 @@ char *get_common_dir() {
  *
  */
 int make_oc20() {
-	int debug = 1;
+	int debug = 0;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
 
@@ -2739,45 +2801,65 @@ int content_to_oc20( char *name ) {
 	return 0;
 }
 
+/**
+ * Adds versions numbers to package files
+ *
+ *
+ */
 int add_version( FILE *f ) {
-	int debug = 1;
+	int debug = 0;
 
 	char buff[ MAX_LINE ];
 	struct llist *matches;
-	size_t len, str_len;
+	size_t len, str_len, buff_len, new_len;
 	int c = 0;
 
 	rewind( f );
 
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
-		if ( c > 100 ) break;
+		if ( c > 10 ) break;
 
-		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
 		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
 
-		if ( 0 == match( buff, "@version[:blank:]*([0-9]+\\.[0-9]+\\.[0-9]+[:blank:]*)", m, 0 ) ) {
+		if ( 0 == match( buff, "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+\\s*)", m, 0 ) ) {
 			if ( DEBUG || debug ) {
 				fprintf( stderr, "Matched string '%s'\n", buff );
 				matches = get_matches( buff );
 				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
 			}
 
-			len = ceil( log10( major ) ) + ceil( log10( minor ) ) + ceil( log10( patch ) ) + 2;
-			str_len = m[ 1 ].rm_eo = m[ 1 ].rm_so;
+			// Length of package current version in characters
+			len = ( !major ? 1 : ceil( log10( major ) ) ) + ( !minor ? 1 : ceil( log10( minor ) ) ) + ( !patch ? 1 : ceil( log10( patch ) ) ) + 2;
 
+			// Matched version length
+			str_len = m[ 1 ].rm_eo - m[ 1 ].rm_so;
+
+			// Buffer length
+			buff_len = strlen( buff );
+
+			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%d.%d.%d) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", major, minor, patch, len, str_len, buff_len, m[ 1 ].rm_so, m[ 1 ].rm_eo );
+
+			// Add version numbers right after '@version '
 			if ( str_len < len ) {
-				strcpy( buff, "0.0.0" );
-				memset( &buff[ 5 ], ' ', str_len - 5 );
+				sprintf( &buff[ m[ 1 ].rm_so ], "0.0.0\n" );
 
 			} else {
-				sprintf( buff, "%d.%d.%d\n", major, minor, patch );
-				memset( &buff[ strlen( buff ) ], ' ', str_len - strlen( buff ) );
+				sprintf( &buff[ m[ 1 ].rm_so ], "%d.%d.%d\n", major, minor, patch );
+			}
+			
+			new_len = strlen( buff );
+
+			if ( DEBUG || debug ) fprintf( stderr, "New buffer length: %ld\n", new_len );
+
+			if ( buff_len > new_len ) {
+				printf( "%ld\n", buff_len - new_len );
+				memset( &buff[ new_len ], ' ', buff_len - new_len );
 			}
 
 			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
-			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", str_len );
+			if ( DEBUG || debug ) fprintf( stderr, "Buffer length: %ld\n", buff_len );
 
-			if( -1 == fseeko( f, -1 * str_len, SEEK_CUR ) ) {
+			if( -1 == fseeko( f, -1 * buff_len, SEEK_CUR ) ) {
 				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
 				exit( 1 );
 			}
@@ -2795,5 +2877,135 @@ int add_version( FILE *f ) {
 		}
 
 		c++;
+
+		memset( buff, '\0', MAX_LINE );
 	}
+}
+
+xmlNodePtr find_node( xmlNodePtr nod, char *name ) {
+	xmlNodePtr cur, ret;
+
+	cur = nod->xmlChildrenNode;
+
+	// Try first level
+	while ( NULL != cur ) {
+		if ( 0 == xmlStrcmp( cur->name, ( const xmlChar * )name ) ) {
+			return cur;
+		}
+
+		cur = cur->next;
+	}
+
+	cur = nod->xmlChildrenNode;
+
+	// Try recursion
+	while ( NULL != cur ) {
+		if ( NULL != ( ret = find_node( cur, name ) ) ) {
+			return ret;
+		}
+
+		cur = cur->next;
+	}
+
+	return NULL;
+}
+
+int fix_vqmod_file( xmlDocPtr doc, xmlNodePtr cur ) {
+	xmlNodePtr add, search;
+
+	// file path => name
+	xmlSetProp( cur, "name", xmlGetProp( cur, "path" ) );
+	xmlUnsetProp( cur, "path" );
+
+	add = find_node( cur, "add" );
+	search = find_node( cur, "search" );
+
+	if ( NULL == add ) {
+		fprintf( stderr, "fix_vqmod_file: file node doesn't contain node 'add'\n" );
+		exit( 1 );
+	}
+
+	if ( NULL == search ) {
+		fprintf( stderr, "fix_vqmod_file: file node doesn't contain nod 'search'\n" );
+		exit( 1 );
+	}
+
+	xmlSetProp( search, "position", xmlGetProp( add, "position" ) );
+	xmlUnsetProp( add, "position" );
+
+    return 1;
+}
+
+xmlDocPtr parseDoc() {
+
+	xmlDocPtr doc;
+	xmlNodePtr cur, prev, mod;
+	char name[path_max_size ];
+
+	strcpy( name, pckg_tmp_dir );
+	sprintf( &name[ strlen( name ) ], "%s.ocmod.xml", code );
+
+	doc = xmlParseFile( name );
+	
+	if ( doc == NULL ) {
+		fprintf( stderr,"parseDoc: Document not parsed successfully.\n");
+		return (NULL);
+	}
+	
+	mod = xmlDocGetRootElement( doc );
+	
+	if (mod == NULL) {
+		fprintf(stderr,"parseDoc: empty document\n");
+		xmlFreeDoc(doc);
+		return (NULL);
+	}
+	
+	if (xmlStrcmp(mod->name, (const xmlChar *) "modification")) {
+		fprintf(stderr,"parseDoc: document of the wrong type, root node != modification");
+		xmlFreeDoc(doc);
+		return (NULL);
+	}
+	
+	cur = mod->xmlChildrenNode;
+	prev = NULL;
+
+	while ( cur != NULL ) {
+		if ( ( ! xmlStrcmp( cur->name, ( const xmlChar * )"file" ) ) ) {
+			fix_vqmod_file( doc, cur );
+
+		} else if ( ( ! xmlStrcmp( cur->name, ( const xmlChar * )"name" ) ) ) {
+			xmlNodeSetName( cur, "id" );
+
+		} if ( 0 == xmlStrcmp( cur->name, ( const xmlChar * )"code" ) || 0 == xmlStrcmp( cur->name, ( const xmlChar * )"link" ) ) {
+			prev = cur;
+			cur = cur->next;
+
+			xmlUnlinkNode( prev );
+			xmlFreeNode( prev );
+			continue;
+		}
+		 
+		cur = cur->next;
+	}
+
+	return(doc);
+}
+
+int make_vqmod() {
+
+	char name[ path_max_size ];
+	char *keyword;
+	xmlDocPtr doc;
+
+	strcpy( name, pckg_tmp_dir );
+	sprintf( &name[ strlen( name ) ], "%s.vqmod.xml", code );
+
+	doc = parseDoc ();
+
+	if (doc != NULL) {
+		xmlSaveFormatFile ( name, doc, 0 );
+		xmlFreeDoc( doc );
+	}
+	
+	return 0;
 }
