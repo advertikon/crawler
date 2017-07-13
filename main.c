@@ -1300,7 +1300,7 @@ void end_clock( char *msg ) {
     	}
     }
 
-    printf( "%40.40s: ", msg );
+    printf( "%-30.30s: ", msg );
     printf(
     	"Real Time: %4.2f, User Time %4.2f, System Time %4.2f\n",
         ( en_time - st_time ) / (float)clockticks,
@@ -1342,7 +1342,7 @@ int print_config() {
  */
 int print_files() {
 	if ( NULL == files->first ) {
-		printf( "Lust is empty\n" );
+		printf( "List is empty\n" );
 
 	} else {
 		files->current = files->first;
@@ -2852,7 +2852,6 @@ int add_version( FILE *f ) {
 			if ( DEBUG || debug ) fprintf( stderr, "New buffer length: %ld\n", new_len );
 
 			if ( buff_len > new_len ) {
-				printf( "%ld\n", buff_len - new_len );
 				memset( &buff[ new_len ], ' ', buff_len - new_len );
 			}
 
