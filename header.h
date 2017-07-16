@@ -7,7 +7,6 @@
 #include <limits.h>
 #include <unistd.h>
 #include <errno.h>
-#include <yaml.h>
 #include <signal.h>
 #include <regex.h>
 #include <time.h>
@@ -22,6 +21,7 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
+#include <assert.h>
 
 #include "error.h"
 #include "args.h"
@@ -97,6 +97,9 @@ int content_to_oc20( char* );
 int add_version( FILE * );
 int make_vqmod();
 int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
+int set_config_name( void );
+int xml_to_config( struct llist*, xmlNodePtr );
+xmlNodePtr config_to_xml( char*, struct llist* );
 
 #define MAX_LINE 400
 #define DEBUG 0

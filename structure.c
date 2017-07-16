@@ -235,6 +235,8 @@ static int s_print( struct llist* l ) {
 		l->current = l->current->next;
 	}
 
+	l->current = l->first;
+
 	return 0;
 }
 
@@ -254,7 +256,7 @@ static int s_remove( const char *name, struct llist* l ) {
 	struct llist_item *prev = NULL;
 	int found = 0;
 
-	while ( l->current && l->current->name ) {
+	while ( NULL != l->current && NULL != l->current->name ) {
 		if ( 0 == strcmp( l->current->name, name ) ) {
 			if ( NULL != prev ) {
 				prev->next = l->current->next;
@@ -265,8 +267,11 @@ static int s_remove( const char *name, struct llist* l ) {
 
 			if ( l->current->is_string ) {
 				l->size -= L_MEM( l->current );
-				free( l->current );
+				free( l->current->value );
 			}
+
+			free( l->current->name );
+			free( l->current );
 
 			l->current = l->first;
 

@@ -4,7 +4,7 @@ char* mod_name = "Crawler";
 char* code;
 char* cur_input = NULL;
 char *abort_command_str = "q";
-char* config_name = ".crawler";
+char config_name[ MAX_LINE ] = ".crawler";
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
@@ -26,7 +26,7 @@ int save_me = 0;
 int cwd_length = 0;
 int files_count;
 int major = 0; // Package major number
-int minor = 1; // Package manor number
+int minor = 0; // Package minor number
 int patch = 0; // Package patch number
 
 size_t path_max_size;
@@ -51,11 +51,13 @@ regmatch_t m[ REGEX_MATCH_COUNT ];
 
 static clock_t st_time;
 static clock_t en_time;
-static long clockticks = 0;
+static long clockticks = 0; 
 static struct tms st_cpu;
 static struct tms en_cpu;
 
 int main( int argc, char **argv ) {
+	int debug = 0;
+
 	char line[ MAX_LINE ];
 	cwd = path_alloc( &path_max_size );
 
@@ -91,7 +93,7 @@ int main( int argc, char **argv ) {
 
 	set_winsize();
 
-	if ( DEBUG ) fprintf( stderr, "Initializing lists....\n" );
+	if ( DEBUG || debug ) fprintf( stderr, "Initializing lists....\n" );
 
 	include_dir = init_llist();
 	exclude_dir = init_llist();
@@ -105,17 +107,21 @@ int main( int argc, char **argv ) {
 	temp = init_llist();
 	files = init_llist();
 
-	if ( DEBUG ) fprintf( stderr, "Parsing configuration....\n" );
+	parse_args( argv );
+
+	if ( 1 == get_arg( "code", &code ) ) {
+		fprintf( stderr, "Supply package code name as --code argument\n" );
+		exit( 1 );
+	}
+
+	set_config_name();
+
+	if ( DEBUG || debug ) print_args();
+	if ( DEBUG || debug ) fprintf( stderr, "Parsing configuration....\n" );
 
 	parse_config();
 
-	if ( DEBUG ) fprintf( stderr, "Configuration has been parsed\n" );
-
-	parse_args( argv );
-	print_args();
-
-	// Rewrite code configuration which may be in configuration 
-	get_arg( "code", &code );
+	if ( DEBUG || debug ) fprintf( stderr, "Configuration has been parsed\n" );
 
 	while ( 1 ) {
 		if ( 0 == command ) {
@@ -499,193 +505,15 @@ int on_iterate_error( char *name ) {
 }
 
 /**
- * YAML parser
- *
- */
-int parse_config( void ) {
-  yaml_parser_t parser;
-  yaml_event_t  event;
-  FILE *fh = fopen( config_name, "r" );
-  int is_mapping = 0;
-  int is_sequence = 0;
-  int is_include_dir = 0;
-  int is_include_file = 0;
-  int is_include_regexp = 0;
-  int is_exclude_dir = 0;
-  int is_exclude_file = 0;
-  int is_exclude_regexp = 0;
-  int is_major = 0;
-  int is_minor = 0;
-  int is_patch = 0;
-  int is_code = 0;
-
-  if ( NULL == fh ) {
-	perror( "Failed to open configuration file" );
-	return 1;
-  }
-
-  /* Initialize parser */
-  if( !yaml_parser_initialize( &parser ) )
-    fputs( "Failed to initialize parser!\n", stderr );
-
-  /* Set input file */
-  yaml_parser_set_input_file( &parser, fh );
-
-  /* START new code */
-  do {
-    if ( !yaml_parser_parse( &parser, &event ) ) {
-       printf( "Parser error %d\n", parser.error );
-       exit( EXIT_FAILURE );
-    }
-
-    switch( event.type ) { 
-    case YAML_NO_EVENT: puts( "No event!" ); break;
-    /* Stream start/end */
-    case YAML_STREAM_START_EVENT:
-    	// puts( "STREAM START" );
-    	break;
-    case YAML_STREAM_END_EVENT:
-    	// puts( "STREAM END" );
-    	break;
-    /* Block delimeters */
-    case YAML_DOCUMENT_START_EVENT:
-    	// puts( "Start Document" );
-    	break;
-    case YAML_DOCUMENT_END_EVENT:
-    	// puts( "End Document" );
-    	break;
-    case YAML_SEQUENCE_START_EVENT:
-    	// puts( "Start Sequence" );
-    	is_sequence = 1;
-    	break;
-    case YAML_SEQUENCE_END_EVENT:
-    	// puts( "End Sequence" );
-    	is_sequence = 0;
-    	is_include_dir = 0;
-    	is_include_file = 0;
-    	is_include_regexp = 0;
-    	is_exclude_dir = 0;
-    	is_exclude_file = 0;
-    	is_exclude_regexp = 0;
-   		break;
-    case YAML_MAPPING_START_EVENT:
-    	// puts( "Start Mapping" );
-    	is_mapping = 1;
-    	break;
-    case YAML_MAPPING_END_EVENT:
-    	// puts( "End Mapping" );
-    	is_mapping = 0;
-   	 	break;
-    /* Data */
-    case YAML_ALIAS_EVENT:
-    	// printf( "Got alias (anchor %s)\n", event.data.alias.anchor );
-    	break;
-    case YAML_SCALAR_EVENT:
-	    // printf( "Got scalar (value %s)\n", event.data.scalar.value );
-
-    	if ( is_code ) {
-    		memset( code, '\0', MAX_LINE );
-    		strcpy( code, event.data.scalar.value );
-    		is_code = 0;
-    		break;
-    	}
-
-    	if ( is_major ) {
-    		major = atoi( event.data.scalar.value );
-    		is_major = 0;
-    		break;
-    	}
-
-    	if ( is_minor ) {
-    		minor = atoi( event.data.scalar.value );
-    		is_minor = 0;
-    		break;
-    	}
-
-    	if ( is_patch ) {
-    		patch = atoi( event.data.scalar.value );
-    		is_patch = 0;
-    		break;
-    	}
-
-    	if ( 0 == is_sequence && 1 == is_mapping ) {
-    		if ( 0 == strcmp( "include_dir", event.data.scalar.value ) ) {
-    			is_include_dir = 1;
-
-    		} else if ( 0 == strcmp( "include_file", event.data.scalar.value ) ) {
-    			is_include_file = 1;
-
-    		} else if ( 0 == strcmp( "include_regexp", event.data.scalar.value ) ) {
-    			is_include_regexp = 1;
-
-    		} else if ( 0 == strcmp( "exclude_dir", event.data.scalar.value ) ) {
-    			is_exclude_dir = 1;
-
-    		} else if ( 0 == strcmp( "exclude_file", event.data.scalar.value ) ) {
-    			is_exclude_file = 1;
-
-    		} else if ( 0 == strcmp( "exclude_regexp", event.data.scalar.value ) ) {
-    			is_exclude_regexp = 1;
-
-    		} else if ( 0 == strcmp( "code", event.data.scalar.value ) ) {
-    			is_code = 1;
-
-    		} else if ( 0 == strcmp( "major", event.data.scalar.value ) ) {
-    			is_major = 1;
-
-    		} else if ( 0 == strcmp( "minor", event.data.scalar.value ) ) {
-    			is_minor = 1;
-
-    		} else if ( 0 == strcmp( "patch", event.data.scalar.value ) ) {
-    			is_patch = 1;
-    		}
-
-    	} else if ( 1 == is_sequence ) {
-    		if ( is_include_dir ) {
-    			include_dir->add( NULL, event.data.scalar.value, include_dir );
-
-    		} else if ( is_include_file ) {
-    			include_file->add( NULL, event.data.scalar.value, include_file );
-
-    		} else if ( is_include_regexp ) {
-    			include_regexp->add( NULL, event.data.scalar.value, include_regexp );
-
-    		} else if ( is_exclude_dir ) {
-    			exclude_dir->add( NULL, event.data.scalar.value, exclude_dir );
-
-    		} else if ( is_exclude_file ) {
-    			exclude_file->add( NULL, event.data.scalar.value, exclude_file );
-
-    		} else if ( is_exclude_regexp ) {
-    			exclude_regexp->add( NULL, event.data.scalar.value, exclude_regexp );
-    		}
-    	}
-
-   		break;
-    }
-
-    if( event.type != YAML_STREAM_END_EVENT )
-      yaml_event_delete( &event );
-
-  } while( event.type != YAML_STREAM_END_EVENT );
-
-  yaml_event_delete( &event );
-  /* END new code */
-
-  /* Cleanup */
-  yaml_parser_delete( &parser );
-  fclose( fh );
-
-  return 0;
-}
-
-/**
  * Saves configuration file
  * CHDIR to CWD
  *
  */
 int save_config() {
-	char *raw_name = "~conf";
+	xmlDocPtr doc;
+	xmlNodePtr root, child;
+
+	char b[ 10 ];
 
 	if ( 0 == config_is_dirty ) return 0;
 
@@ -694,35 +522,72 @@ int save_config() {
 		exit( 1 );
 	}
 
-	FILE *tc = fopen( raw_name, "w" ); // ~conf
+	doc = xmlNewDoc( "1.0" );
+	root = xmlNewNode( NULL, "config" );
+	xmlDocSetRootElement( doc, root );
 
-	if ( NULL == tc ) {
-		perror( "Failed to create temporary configuration file" );
-		return 1;
+	xmlAddChild( root, config_to_xml( "include_file", include_file ) );
+	xmlAddChild( root, config_to_xml( "exclude_file", exclude_file ) );
+	xmlAddChild( root, config_to_xml( "include_dir", include_dir ) );
+	xmlAddChild( root, config_to_xml( "exclude_dir", exclude_dir ) );
+	xmlAddChild( root, config_to_xml( "include_regexp", include_regexp ) );
+	xmlAddChild( root, config_to_xml( "exclude_regexp", exclude_regexp ) );
+
+	child = xmlNewNode( NULL, "code" );
+	xmlNodeAddContent( child, code );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "major" );
+	sprintf( b, "%d", major );
+	xmlNodeAddContent( child, b );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "minor" );
+	sprintf( b, "%d", minor );
+	xmlNodeAddContent( child, b );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "patch" );
+	sprintf( b, "%d", patch );
+	xmlNodeAddContent( child, b );
+	xmlAddChild( root, child );
+
+	if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
+		fprintf( stderr, "Configuration file was updated\n" );
+
+	} else {
+		fprintf( stderr, "Failed to update configuration file\n" );
 	}
 
-	write_config_section( "include_dir", tc, include_dir );
-	write_config_section( "include_file", tc, include_file );
-	write_config_section( "include_regexp", tc, include_regexp );
-	write_config_section( "exclude_dir", tc, exclude_dir );
-	write_config_section( "exclude_file", tc, exclude_file );
-	write_config_section( "exclude_regexp", tc, exclude_regexp );
-
-	fprintf( tc, "code : %s\n", code );
-	fprintf( tc, "major : %d\n", major );
-	fprintf( tc, "minor : %d\n", minor );
-	fprintf( tc, "patch : %d\n", patch ); // Everything goes to ~conf
-
-	fclose( tc );
-
-	if ( -1 == rename( raw_name, config_name ) ) {
-		fprintf( stderr, "save_config: failed to rename '%s' to '%s': %s", raw_name, config_name, strerror( errno ) );
-		exit( 1 );
-	}
-
-	fprintf( stderr, "Configurations were updated\n" );
+	xmlFreeNode( child );
+	xmlFreeDoc( doc );
 
 	return 0;
+}
+
+xmlNodePtr config_to_xml( char *name, struct llist *l ) {
+	int debug = 0;
+
+	xmlNodePtr cur, parent;
+
+	if ( DEBUG || debug ) fprintf( stderr, "Processing list %s\n", name );
+	if ( DEBUG || debug ) l->print( l );
+
+	parent = xmlNewNode( NULL, name );
+
+	if ( NULL == l->first ) return NULL;
+
+	l->current = l->first;
+
+	while ( NULL != l->current ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Adding %s\n", (char*)l->current->value );
+		cur = xmlNewNode( NULL, "item" );
+		xmlNodeAddContent( cur, (xmlChar*)l->current->value );
+		xmlAddChild( parent, cur );
+		l->current = l->current->next;
+	}
+
+	return parent;
 }
 
 /**
@@ -987,12 +852,16 @@ int remove_from_config( struct llist* l ) {
 	if ( NULL != l && NULL != l->first ) {
 		l->current = l->first;
 
-		while( l->current ) {
+		while( NULL != l->current ) {
 			if ( 0 == temp->has_value( l->current->name, temp ) ) {
 				l->remove( l->current->name, l );
 
 				if ( NULL == l->current ) {
 					break;
+
+				} else {
+					l->current = l->first;
+					continue;
 				}
 			}
 
@@ -2991,7 +2860,6 @@ xmlDocPtr parseDoc() {
 }
 
 int make_vqmod() {
-
 	char name[ path_max_size ];
 	char *keyword;
 	xmlDocPtr doc;
@@ -3006,5 +2874,107 @@ int make_vqmod() {
 		xmlFreeDoc( doc );
 	}
 	
+	return 0;
+}
+
+int set_config_name() {
+	strcat( config_name, "_" );
+	strcat( config_name, code );
+
+	return 0;
+}
+
+int parse_config() {
+	char name[ path_max_size ];
+	char *keyword;
+
+	xmlDocPtr doc;
+	xmlNodePtr cur, prev, root;
+
+	doc = xmlParseFile( config_name );
+
+	if ( doc == NULL ) {
+		fprintf( stderr,"Configuration file was not parsed.\n");
+		return 1;
+	}
+	
+	root = xmlDocGetRootElement( doc );
+	
+	if ( root == NULL) {
+		fprintf(stderr,"Configuration file is empty\n");
+		xmlFreeDoc(doc);
+		return 0;
+	}
+	
+	if (xmlStrcmp(root->name, (const xmlChar *) "config")) {
+		fprintf(stderr,"parse_conf: document of the wrong type, root node != config");
+		xmlFreeDoc(doc);
+		exit( 1 );
+	}
+	
+	cur = root->xmlChildrenNode;
+	prev = NULL;
+
+	while ( cur != NULL ) {
+		if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_file" ) ) {
+			xml_to_config( include_file, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_file" ) ) {
+			xml_to_config( exclude_file, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_dir" ) ) {
+			xml_to_config( include_dir, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_dir" ) ) {
+			xml_to_config( exclude_dir, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_regexp" ) ) {
+			xml_to_config( include_regexp, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_regexp" ) ) {
+			xml_to_config( exclude_regexp, cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"code" ) ) {
+			code = xmlNodeGetContent( cur );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"major" ) ) {
+			major = atoi( xmlNodeGetContent( cur ) );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"minor" ) ) {
+			minor = atoi( xmlNodeGetContent( cur ) );
+
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"patch" ) ) {
+			patch = atoi( xmlNodeGetContent( cur ) );
+		}
+		 
+		cur = cur->next;
+	}
+
+	if (doc != NULL) {
+		xmlFreeDoc( doc );
+	}
+	
+	return 0;
+}
+
+int xml_to_config( struct llist *l, xmlNodePtr root ) {
+	int debug = 0;
+
+	xmlNodePtr cur = root->xmlChildrenNode;
+
+	while ( cur != NULL ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
+
+		if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", xmlNodeGetContent( cur ) );
+
+			l->add( NULL, xmlNodeGetContent( cur ), l );
+		}
+
+		cur = cur->next;
+	}
+
+	if ( DEBUG || debug ) l->print( l );
+
 	return 0;
 }
