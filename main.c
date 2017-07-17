@@ -2260,17 +2260,30 @@ int save_translation( char *name, struct llist *l ) {
 	if ( NULL != l->first ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Writing translations....\n" );
 
+		if ( debug ) l->print( l );
+
 		l->current = l->first;
 
 		while( l->current ) {
+			if ( debug ) fprintf( stderr, "$_['%1$s'] = '%1$s';\n", (char*)l->current->value );
+
 			sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)l->current->value );
 			fputs( buff, to );
 			l->current = l->current->next;
 		}
 	}
 
-	fclose( from );
+	if ( debug ) {
+		fprintf( stderr, "From FILE: %p, to FILE %p\n", from, to );
+	}
+
+	if ( NULL != from ) {
+		fclose( from );
+	}
+
 	fclose( to );
+
+	if ( debug ) fprintf( stderr, "Exit save translation\n" );
 
 	return 0;
 }
