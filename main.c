@@ -2631,6 +2631,8 @@ int content_to_oc20( char *name ) {
 	struct llist *matches;
 	size_t len;
 
+	char tb[ MAX_LINE ];
+
 	if ( NULL == ( f = fopen( name, "r+" ) ) ) {
 		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
 		exit( 1 );
@@ -2644,20 +2646,21 @@ int content_to_oc20( char *name ) {
 
 		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, REG_ICASE ) ) {
 			if ( DEBUG || debug ) {
-				fprintf( stderr, "Matched string '%s'\n", buff );
+				fprintf( stderr, "Matched string \n'%s'\n", buff );
 				matches = get_matches( buff );
 				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
 			}
 
 			len = strlen( buff );
 
-			// Slice 'extension' part from class name
-			strcpy( &buff[ m[ 1 ].rm_so ], &buff[ m[ 1 ].rm_eo ] );
+			memset( tb, '\0', MAX_LINE );
+			strncpy( tb, buff, m[ 1 ].rm_so );
+			strcat( tb, &buff[ m[ 1 ].rm_eo ] );
 
 			// Add spaces in place of removed characters up to original newline character
-			memset( &buff[ strlen( buff ) - 1 ], ' ', 9  );
+			strcat( tb, "         \n" );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
+			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: \n'%s'\n", tb );
 			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", len );
 
 			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
@@ -2667,7 +2670,7 @@ int content_to_oc20( char *name ) {
 
 			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
 
-			if ( EOF == fputs( buff, f ) ) {
+			if ( EOF == fputs( tb, f ) ) {
 				fprintf( stderr, "content_to_oc20: failed to write back string to a file '%s': %s\n", name, strerror( errno ) );
 				exit( 1 );
 			}
