@@ -2297,6 +2297,7 @@ int run_filters() {
 
 	FILE *f;
 	char path[ path_max_size ];
+	char *ext;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Start filtering...\n" );
 
@@ -2328,6 +2329,21 @@ int run_filters() {
 	while ( files->current ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Opening file '%s'\n", files->current->name );
 
+		ext = strrchr( files->current->name, '.' );
+
+		// If file is not php, tpl or xml  - skip it
+		if (
+			NULL == ext
+			||
+			(
+				strncmp( ext, ".php", 4 ) != 0 &&
+				strncmp( ext, ".tpl", 4 ) != 0 &&
+				strncmp( ext, ".xml", 4 ) != 0 &&
+				strncmp( ext, ".js", 3 )  != 0 &&
+				strncmp( ext, ".css", 4 ) != 0
+			)
+		) goto next;
+
 		if ( NULL != strstr( files->current->name, "ocmod.xml" ) && NULL != strstr( files->current->name, "system/")  ) {
 
 			// system/name.ocmod.xml is now ../install.xml
@@ -2343,7 +2359,6 @@ int run_filters() {
 			}
 		}
 
-
 		filters->current = filters->first;
 
 		while( filters->current ) {
@@ -2353,8 +2368,8 @@ int run_filters() {
 			filters->current = filters->current->next;
 		}
 
-		files->current = files->current->next;
 		fclose( f );
+		next: files->current = files->current->next;
 	}
 
 	if ( -1 == chdir( cwd ) ) {
@@ -2631,6 +2646,8 @@ int content_to_oc20( char *name ) {
 	struct llist *matches;
 	size_t len;
 
+	char tb[ MAX_LINE ];
+
 	if ( NULL == ( f = fopen( name, "r+" ) ) ) {
 		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
 		exit( 1 );
@@ -2644,20 +2661,21 @@ int content_to_oc20( char *name ) {
 
 		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, REG_ICASE ) ) {
 			if ( DEBUG || debug ) {
-				fprintf( stderr, "Matched string '%s'\n", buff );
+				fprintf( stderr, "Matched string \n'%s'\n", buff );
 				matches = get_matches( buff );
 				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
 			}
 
 			len = strlen( buff );
 
-			// Slice 'extension' part from class name
-			strcpy( &buff[ m[ 1 ].rm_so ], &buff[ m[ 1 ].rm_eo ] );
+			memset( tb, '\0', MAX_LINE );
+			strncpy( tb, buff, m[ 1 ].rm_so );
+			strcat( tb, &buff[ m[ 1 ].rm_eo ] );
 
 			// Add spaces in place of removed characters up to original newline character
-			memset( &buff[ strlen( buff ) - 1 ], ' ', 9  );
+			strcat( tb, "         \n" );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
+			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: \n'%s'\n", tb );
 			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", len );
 
 			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
@@ -2667,7 +2685,7 @@ int content_to_oc20( char *name ) {
 
 			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
 
-			if ( EOF == fputs( buff, f ) ) {
+			if ( EOF == fputs( tb, f ) ) {
 				fprintf( stderr, "content_to_oc20: failed to write back string to a file '%s': %s\n", name, strerror( errno ) );
 				exit( 1 );
 			}
@@ -2692,20 +2710,49 @@ int add_version( FILE *f ) {
 	int debug = 0;
 
 	char buff[ MAX_LINE ];
+	char prev[MAX_LINE ];
 	struct llist *matches;
 	size_t len, str_len, buff_len, new_len;
 	int c = 0;
+	char *p;
+	int i;
 
 	rewind( f );
 
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
 		if ( c > 10 ) break;
 
-		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
-
-		if ( 0 == match( buff, "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+\\s*)", m, 0 ) ) {
+		if ( 0 == match( buff, "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+ *)$", m, REG_NEWLINE ) ) {
 			if ( DEBUG || debug ) {
-				fprintf( stderr, "Matched string '%s'\n", buff );
+				printf( "Prev: '%s'\n", prev );
+				fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
+				fprintf( stderr, "Matched string\n" );
+
+				p = buff;
+				while( '\0' != *p ) {
+					printf( "%4c", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = buff;
+				while( '\0' != *p ) {
+					printf( "%4d", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = buff;
+				i = 0;
+				while( '\0' != *p ) {
+					printf( "%4d", i++ );
+					p++;
+				}
+
+				printf( "\n" );
+
 				matches = get_matches( buff );
 				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
 			}
@@ -2722,18 +2769,47 @@ int add_version( FILE *f ) {
 			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%d.%d.%d) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", major, minor, patch, len, str_len, buff_len, m[ 1 ].rm_so, m[ 1 ].rm_eo );
 
 			// Add version numbers right after '@version '
-			if ( str_len < len ) {
-				sprintf( &buff[ m[ 1 ].rm_so ], "0.0.0\n" );
+			if ( str_len < len && str_len >= 5 ) {
+				sprintf( &buff[ m[ 1 ].rm_so ], "0.0.0" );
+				len = 5;
 
 			} else {
-				sprintf( &buff[ m[ 1 ].rm_so ], "%d.%d.%d\n", major, minor, patch );
+				sprintf( &buff[ m[ 1 ].rm_so ], "%d.%d.%d", major, minor, patch );
+			}
+
+			if ( debug ) {
+				p = buff;
+				while( '\0' != *p ) {
+					printf( "%4c", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = buff;
+				while( '\0' != *p ) {
+					printf( "%4d", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = buff;
+				i = 0;
+				while( '\0' != *p ) {
+					printf( "%4d", i++ );
+					p++;
+				}
+
+				printf( "\n" );
 			}
 			
 			new_len = strlen( buff );
 
 			if ( DEBUG || debug ) fprintf( stderr, "New buffer length: %ld\n", new_len );
 
-			if ( buff_len > new_len ) {
+			if ( str_len > len ) {
+				if ( debug ) fprintf( stderr, "Padding right\n" );
 				memset( &buff[ new_len ], ' ', buff_len - new_len );
 			}
 
@@ -2758,6 +2834,8 @@ int add_version( FILE *f ) {
 		}
 
 		c++;
+
+		strcpy( prev, buff );
 
 		memset( buff, '\0', MAX_LINE );
 	}
