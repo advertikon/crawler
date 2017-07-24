@@ -100,6 +100,8 @@ int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
 int set_config_name( void );
 int xml_to_config( struct llist*, xmlNodePtr );
 xmlNodePtr config_to_xml( char*, struct llist* );
+int php_lint();
+int php_lint_cb( char*, struct stat* );
 
 #define MAX_LINE 400
 #define DEBUG 0
@@ -108,6 +110,7 @@ xmlNodePtr config_to_xml( char*, struct llist* );
 #define BUFF_SIZE 4096
 
 #define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
+#define N_LEN( n ) ( ( ( 0 == n ) ? 1 : ( ( 0 == ( n % 10 ) ) ? ceil( log10( n ) ) + 1 : ceil( log10( n ) ) ) ) )
 
 enum COMMANDS {
 	C_ADD_INCL_FOLDER = 1,

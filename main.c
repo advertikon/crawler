@@ -1593,6 +1593,10 @@ int make_package() {
 	save_translation( "catalog", catalog_t );
 	end_clock( "Translation catalog" );
 
+	start_clock();
+	php_lint();
+	end_clock( "php lint" );
+
 	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
 	run_zip( pckg_name );
 
@@ -2171,6 +2175,59 @@ int fetch_translation( FILE* f, struct llist* l ) {
 	return 0;
 }
 
+int php_lint() {
+	char path[ MAX_LINE ];
+
+	strcpy( path, pckg_tmp_dir );
+	strcat( path, upload_folder );
+
+	iterate( path, php_lint_cb, NULL, on_iterate_error );
+
+	return 0;
+}
+
+int php_lint_cb( char *name, struct stat *sb ) {
+	char cmd[ MAX_LINE + 7 ];
+	int code;
+	char *ext;
+
+	ext = strrchr( name, '.' );
+
+	// If file is not php, tpl or xml  - skip it
+	if (
+		NULL == ext
+		||
+		(
+			strncmp( ext, ".php", 4 ) != 0 &&
+			strncmp( ext, ".tpl", 4 ) != 0 &&
+			strncmp( ext, ".xml", 4 ) != 0
+		)
+	) return 0;
+
+	memset( cmd, '\0', MAX_LINE + 7 );
+	strcpy( cmd, "php -l " );
+	strcat( cmd, name );
+
+	code = system( cmd );
+
+	if ( -1 == code ) {
+		fprintf( stderr, "php_lint: error: %s\n", strerror( errno ) );
+		exit( 1 );
+	}
+
+	if ( 127 == code ) {
+		fprintf( stderr, "php_lint: failed to execute php -l\n" );
+		exit( 1 );
+	}
+
+	if ( 0 != code ) {
+		fprintf( stderr, "php_lint: Failed to lint file %s\n", name );
+		exit( 1 );
+	}
+
+	return 0;
+}
+
 // TODO: implement catalog translation maybe
 /**
 * Saves translation file into temporary directory
@@ -2711,6 +2768,7 @@ int add_version( FILE *f ) {
 
 	char buff[ MAX_LINE ];
 	char prev[MAX_LINE ];
+	char new_buff[ MAX_LINE ];
 	struct llist *matches;
 	size_t len, str_len, buff_len, new_len;
 	int c = 0;
@@ -2758,7 +2816,9 @@ int add_version( FILE *f ) {
 			}
 
 			// Length of package current version in characters
-			len = ( !major ? 1 : ceil( log10( major ) ) ) + ( !minor ? 1 : ceil( log10( minor ) ) ) + ( !patch ? 1 : ceil( log10( patch ) ) ) + 2;
+			len = N_LEN( major ) + N_LEN( minor ) + N_LEN( patch ) + 2;
+
+			if ( DEBUG || debug ) fprintf( stderr, "Major: %f, minor - %f, patch: %f\n", N_LEN( major ), N_LEN( minor ), N_LEN( patch ) );
 
 			// Matched version length
 			str_len = m[ 1 ].rm_eo - m[ 1 ].rm_so;
@@ -2768,17 +2828,23 @@ int add_version( FILE *f ) {
 
 			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%d.%d.%d) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", major, minor, patch, len, str_len, buff_len, m[ 1 ].rm_so, m[ 1 ].rm_eo );
 
+			memset( new_buff, '\0', MAX_LINE );
+			strncpy( new_buff, buff, m[ 1 ].rm_so );
+
 			// Add version numbers right after '@version '
 			if ( str_len < len && str_len >= 5 ) {
-				sprintf( &buff[ m[ 1 ].rm_so ], "0.0.0" );
+				strcat( new_buff, "0.0.0" );
 				len = 5;
 
+			} else if ( str_len >= len ) {
+				sprintf( &new_buff[ m[ 1 ].rm_so ], "%d.%d.%d", major, minor, patch );
+
 			} else {
-				sprintf( &buff[ m[ 1 ].rm_so ], "%d.%d.%d", major, minor, patch );
+				break;
 			}
 
 			if ( debug ) {
-				p = buff;
+				p = new_buff;
 				while( '\0' != *p ) {
 					printf( "%4c", *p );
 					p++;
@@ -2786,7 +2852,7 @@ int add_version( FILE *f ) {
 
 				printf( "\n" );
 
-				p = buff;
+				p = new_buff;
 				while( '\0' != *p ) {
 					printf( "%4d", *p );
 					p++;
@@ -2794,7 +2860,7 @@ int add_version( FILE *f ) {
 
 				printf( "\n" );
 
-				p = buff;
+				p = new_buff;
 				i = 0;
 				while( '\0' != *p ) {
 					printf( "%4d", i++ );
@@ -2804,17 +2870,46 @@ int add_version( FILE *f ) {
 				printf( "\n" );
 			}
 			
-			new_len = strlen( buff );
+			new_len = strlen( new_buff );
 
 			if ( DEBUG || debug ) fprintf( stderr, "New buffer length: %ld\n", new_len );
 
 			if ( str_len > len ) {
-				if ( debug ) fprintf( stderr, "Padding right\n" );
-				memset( &buff[ new_len ], ' ', buff_len - new_len );
+				if ( debug ) fprintf( stderr, "Padding right with %ld spaces\n", str_len - len );
+				memset( &new_buff[ new_len ], ' ', str_len - len );
 			}
 
-			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: '%s'\n", buff );
-			if ( DEBUG || debug ) fprintf( stderr, "Buffer length: %ld\n", buff_len );
+			strcat( new_buff, "\n" );
+
+			if ( debug ) {
+				p = new_buff;
+				while( '\0' != *p ) {
+					printf( "%4c", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = new_buff;
+				while( '\0' != *p ) {
+					printf( "%4d", *p );
+					p++;
+				}
+
+				printf( "\n" );
+
+				p = new_buff;
+				i = 0;
+				while( '\0' != *p ) {
+					printf( "%4d", i++ );
+					p++;
+				}
+
+				printf( "\n" );
+
+				fprintf( stderr, "Result to be saved: '%s'\n", new_buff );
+				fprintf( stderr, "Buffer new length: %ld\n", strlen( new_buff ) );
+			}
 
 			if( -1 == fseeko( f, -1 * buff_len, SEEK_CUR ) ) {
 				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
@@ -2823,7 +2918,7 @@ int add_version( FILE *f ) {
 
 			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
 
-			if ( EOF == fputs( buff, f ) ) {
+			if ( EOF == fputs( new_buff, f ) ) {
 				fprintf( stderr, "content_to_oc20: failed to write back string to a file: %s\n", strerror( errno ) );
 				exit( 1 );
 			}
@@ -2834,9 +2929,7 @@ int add_version( FILE *f ) {
 		}
 
 		c++;
-
 		strcpy( prev, buff );
-
 		memset( buff, '\0', MAX_LINE );
 	}
 }
