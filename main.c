@@ -1885,11 +1885,16 @@ int fill_temp_package() {
 	char path[ path_max_size ];
 	char buffer[ BUFF_SIZE ];
 	char copy[ path_max_size ];
+	char readme_file_name[ MAX_LINE ];
 	int is_copy = 0;
 
 	struct stat sb;
 
 	memset( copy, '\0', path_max_size );
+	memset( readme_file_name, '\0', MAX_LINE );
+
+	strcpy( readme_file_name, code );
+	strcat( readme_file_name, "_readme" );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files..." );
 
@@ -1927,6 +1932,12 @@ int fill_temp_package() {
 
 			// Create OCMOD which can be installed directly
 			strcat( path, strrchr( files->current->name, '/' ) );
+
+		// Place README file in the package root
+		} else if ( strcmp( files->current->name, readme_file_name ) == 0 ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Readme file found: '%s'\n", files->current->name );
+
+			strcat( path, "README.TXT" );
 
 		} else {
 			strcat( path, upload_folder );
