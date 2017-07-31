@@ -2286,6 +2286,8 @@ int save_translation( char *name, struct llist *l ) {
 	strcat( from_name, ".php" );            // admin/language/en-gb/extension/module/extension_name.php
 	strcat( to_name, ".php" );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name.php
 
+	files->add( from_name, from_name, files );
+
 	if ( DEBUG || debug ) {
 		fprintf( stderr, "Source path: '%s'\nTarget path: '%s'\nCWD: '%s'\n", from_name, to_name, cwd );
 	}
@@ -2575,7 +2577,7 @@ char *get_common_dir() {
  *
  */
 int make_oc20() {
-	int debug = 0;
+	int debug = 1;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
 
@@ -2621,10 +2623,17 @@ int make_oc20() {
 			content_to_oc20( new_name );
 		}
 
-		if ( NULL != ( p = strstr( files->current->name, "/en-gb/extension/" ) ) ) {
+		if ( NULL != ( p = strstr( files->current->name, "/en-gb/" ) ) ) {
 			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, files->current->name, p - files->current->name  + 7 ); // from the start up to leading slash
-			strcat( new_name, p + 17 );
+			strncpy( new_name, files->current->name, p - files->current->name ); // from the start up to leading slash
+			strcat( new_name, "/english" );
+
+			if ( NULL != strstr( files->current->name, "/en-gb/extension/" ) ) {
+				strcat( new_name, p + 16 );
+
+			} else {
+				strcat( new_name, p + 6 );
+			}
 
 			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
 
