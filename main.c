@@ -1763,6 +1763,8 @@ int run_zip( char *package_name ) {
 
 	if ( DEBUG || debug ) fprintf( stderr, "ZIPpping package '%s'....\n", package_name );
 
+	start_clock();
+
 	if ( ( pid = fork() ) < 0 ) {
 		print_error( "Failed to fork process for zip" );
 
@@ -1796,8 +1798,6 @@ int run_zip( char *package_name ) {
 	strcat( path, package_name );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Creating ZIP archive... '%s'\n", path );
-
-	start_clock();
 
 	// ZIP everything that are in CWD and save as path
 	if ( execlp( "zip", "zip", "-r", mode, path, ".", (char*)0 ) < 0 ) {
@@ -2307,12 +2307,10 @@ int save_translation( char *name, struct llist *l ) {
 		while ( NULL != fgets( buff, LEN, from ) ) {
 
 			// Save predefined translations
-			if ( 1 == match( buff, "\\$_\\[\\s*'\\s*heading_title\\s*'", NULL, 0 ) ) {
-				continue;
-			}
-
-			// Advertikon Stripe logo link
-			if ( 1 == match( buff, "\\$_\\[\\s*'\\s*text_advertikon_stripe\\s*'", NULL, 0 ) ) {
+			if (
+				1 == match( buff, "\\$_\\[\\s*'\\s*heading_title\\s*'", NULL, 0 ) &&
+				1 == match( buff, "\\$_\\[\\s*'\\s*text_advertikon_stripe\\s*'", NULL, 0 )
+			) {
 				continue;
 			}
 
