@@ -2311,6 +2311,11 @@ int save_translation( char *name, struct llist *l ) {
 				continue;
 			}
 
+			// Advertikon Stripe logo link
+			if ( 1 == match( buff, "\\$_\\[\\s*'\\s*text_advertikon_stripe\\s*'", NULL, 0 ) ) {
+				continue;
+			}
+
 			if ( EOF == fputs( buff, to ) ) {
 				fprintf( stderr, "save_translation: file '%s' writing error: %s\n",to_name, strerror( errno ) );
 				exit( 1 );
@@ -2577,7 +2582,7 @@ char *get_common_dir() {
  *
  */
 int make_oc20() {
-	int debug = 1;
+	int debug = 0;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
 
