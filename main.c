@@ -56,6 +56,27 @@ static struct tms st_cpu;
 static struct tms en_cpu;
 
 int main( int argc, char **argv ) {
+	GtkBuilder *UI_builder;
+	GSList *lp, *lst;
+	GtkWidget *window;
+	GtkComboBoxText *select_package;
+
+	gtk_init(NULL, NULL);
+
+	UI_builder = gtk_builder_new_from_file ( "ui.glade" );
+
+    window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
+    select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
+
+    gtk_widget_show (window);
+
+    gtk_combo_box_text_append_text ( select_package, "first", "first item" );
+    
+    gtk_main ();
+
+
+
+	return 1;
 	int debug = 0;
 
 	char line[ MAX_LINE ];
@@ -1526,7 +1547,7 @@ char* add_cwd( char* path ) {
  * Makes package
  * CHDIR to CWD
  */
-int make_package() {
+int make_package() { 
 	int s;
 	char u_folder[ path_max_size ];
 	char pckg_name[ path_max_size ];

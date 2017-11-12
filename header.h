@@ -22,6 +22,7 @@
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <assert.h>
+#include <gtk/gtk.h>
 
 #include "error.h"
 #include "args.h"
