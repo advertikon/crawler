@@ -61,16 +61,31 @@ int main( int argc, char **argv ) {
 	GtkWidget *window;
 	GtkComboBoxText *select_package;
 
+	char *path;
+	char *dir;
+	char *file;
+
+	path_max_size = get_path_max_size();printf("%li\n", path_max_size );
+	cwd = (char*)g_malloc( path_max_size );
+	path = (char*)g_malloc( path_max_size );
+	file = (char*)g_malloc( path_max_size );
+	dir = g_path_get_dirname( __FILE__ );
+	file = g_build_filename( dir, "ui.glade", NULL );
+
+	if ( DEBUG )printf("UI file: %s\n", file );
+
 	gtk_init(NULL, NULL);
 
-	UI_builder = gtk_builder_new_from_file ( "ui.glade" );
+	UI_builder = gtk_builder_new_from_file ( file );
 
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
 
+    g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
+
     gtk_widget_show (window);
 
-    gtk_combo_box_text_append_text ( select_package, "first", "first item" );
+    get_package_configs( select_package );
     
     gtk_main ();
 
@@ -80,7 +95,6 @@ int main( int argc, char **argv ) {
 	int debug = 0;
 
 	char line[ MAX_LINE ];
-	cwd = path_alloc( &path_max_size );
 
 	if( NULL == getcwd( cwd, path_max_size ) ) {
 		fprintf( stderr, "main: failed to get CWD" );
@@ -383,6 +397,61 @@ int main( int argc, char **argv ) {
 	save_config();
 
 	return 0;
+}
+
+/**
+ * Exits main loop
+ */
+void destroy( GtkWidget *widget, gpointer data ) {
+    gtk_main_quit ();
+}
+
+int get_package_configs( GtkComboBoxText* select_package ) {
+	GSList *list;
+	GSList *init_list;
+	int size;
+	char *item;
+
+	if ( DEBUG ) printf( "Searching for package configs...\n" );
+
+	list = Scandir( "." );
+
+	if ( list == NULL ) {
+		show_error( "Failed to get saved packages\n" );
+
+		return 1;
+	}
+
+	if ( !( size = g_slist_length( list ) ) ) {
+		if( DEBUG )printf( "There is no package configuration files\n" );
+		g_slist_free( list );
+
+		return 0;
+	}
+
+	if ( DEBUG )printf("%i package files were found\n", size );
+	init_list = list;
+	item = g_malloc0( path_max_size );
+
+	do {
+		printf( "'%s'\n", (char*)list->data );
+		// strncpy( item, (char*)list->data, strlen( (char*)list->data ) );
+		// gtk_combo_box_text_append_text( select_package, "sdsd" );
+		memset( item, 0, path_max_size );
+		list = g_slist_next( list );
+	} while( list != NULL );
+
+	g_slist_free( init_list );
+	g_free( item );
+
+	return 0;
+}
+
+/**
+ * Print system error
+ */
+void show_error( char *message ) {
+	fputs( message, stderr );
 }
 
 int usage() {

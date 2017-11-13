@@ -104,8 +104,14 @@ xmlNodePtr config_to_xml( char*, struct llist* );
 int php_lint();
 int php_lint_cb( char*, struct stat* );
 
+void destroy( GtkWidget *, gpointer );
+void show_error( char * );
+int get_package_configs( GtkComboBoxText* );
+
+
+
 #define MAX_LINE 400
-#define DEBUG 0
+#define DEBUG 1
 #define REGEX_MATCH_COUNT 10
 #define VERSION_SIZE 10
 #define BUFF_SIZE 4096

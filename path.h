@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <glob.h>
+#include <gtk/gtk.h>
+#include <dirent.h>
+#include <string.h>
 
 #ifdef PATH_MAX
 	static long pathmax = PATH_MAX;
@@ -21,6 +25,8 @@ static long xsi_version = 0;
 /* If PATH_MAX is indeterminate, no guarantee this is adequate */
 #define PATH_MAX_GUESS 4096
 
-char* path_alloc( size_t* );
+size_t get_path_max_size( void );
+glob_t* Glob( const char *restrict );
+GSList* Scandir( char *dirname );
 
 #endif

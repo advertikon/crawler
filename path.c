@@ -4,8 +4,9 @@
  */
 
 #include "path.h"
+#include "error.h"
 
-char* path_alloc( size_t* sizep ) {
+size_t get_path_max_size() {
 	char* ptr;
 	size_t size;
 
@@ -27,8 +28,8 @@ char* path_alloc( size_t* sizep ) {
 				pathmax = PATH_MAX_GUESS;
 
 			} else {
-				perror("pathconf error for _PC_PATH_MAX");
-				return NULL;
+				perror( "pathconf error for _PC_PATH_MAX" );
+				return 0;
 			}
 
 		} else {
@@ -49,14 +50,47 @@ char* path_alloc( size_t* sizep ) {
 		size = pathmax;
 	}
 
-	if ( ( ptr = malloc( size ) ) == NULL ) {
-		perror( "malloc error for pathname" );
+	return size;
+}
+
+/**
+ * Glob wrapper
+ */
+glob_t* Glob( const char *restrict pattern ) {
+	int status;
+	glob_t *pglob = (glob_t*)g_malloc( sizeof( glob_t ) );
+
+	status = glob( pattern, 0, NULL, pglob );
+
+	if ( status != 0 && status != GLOB_NOMATCH ) {
+		fprintf( stderr, "GLOB error\n" );
+		g_free( pglob );
+
 		return NULL;
 	}
 
-	if ( sizep != NULL ) {
-		*sizep = size;
+	return pglob;
+}
+
+GSList* Scandir( char *dirname ) {
+	struct dirent **namelist;
+	int n;
+	GSList *list = NULL;
+
+	n = scandir( dirname, &namelist, NULL, alphasort );
+
+	if (n == -1) {
+		fprintf( stderr, "Failed to scan directory %s: %s", dirname, strerror( errno ) );
+		return NULL;
 	}
 
-	return( ptr );
+	while ( n-- ) {
+		printf( "%s\n", namelist[ n ]->d_name  );
+		list = g_slist_append( list, namelist[ n ]->d_name );
+		free( namelist[ n ] );
+	}
+
+	free( namelist );
+
+	return list;
 }
