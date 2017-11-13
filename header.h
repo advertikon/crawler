@@ -36,7 +36,7 @@ typedef int It_error(  char* );
 
 int usage( void );
 int iterate(  char*, It_file*, It_dir*, It_error* );
-int parse_config( void );
+int parse_config( char* );
 int save_config( void );
 int add_to(  char* );
 int del_from(  char*, struct llist* );
@@ -99,7 +99,7 @@ int add_version( FILE * );
 int make_vqmod();
 int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
 int set_config_name( void );
-int xml_to_config( struct llist*, xmlNodePtr );
+int xml_to_config( char*, xmlNodePtr );
 xmlNodePtr config_to_xml( char*, struct llist* );
 int php_lint();
 int php_lint_cb( char*, struct stat* );
@@ -107,6 +107,8 @@ int php_lint_cb( char*, struct stat* );
 void destroy( GtkWidget *, gpointer );
 void show_error( char * );
 int get_package_configs( GtkComboBoxText* );
+int filter_package_config_name( const struct dirent* );
+void fill_in_config( GtkComboBox *widget, gpointer user_data );
 
 
 

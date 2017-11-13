@@ -44,6 +44,7 @@ struct llist
 			*admin_t,
 			*catalog_t,
 			*common_t;
+GData **config = NULL;
 
 struct winsize win_size;
 
@@ -55,19 +56,25 @@ static long clockticks = 0;
 static struct tms st_cpu;
 static struct tms en_cpu;
 
+GtkEntry *input_code;
+
 int main( int argc, char **argv ) {
 	GtkBuilder *UI_builder;
 	GSList *lp, *lst;
 	GtkWidget *window;
 	GtkComboBoxText *select_package;
+	GtkEntry *input_code;
 
 	char *path;
 	char *dir;
 	char *file;
 
-	path_max_size = get_path_max_size();printf("%li\n", path_max_size );
+	// Define system dependent path maximum size
+	path_max_size = get_path_max_size();
+
+	// Remember CWD where extension was launched
 	cwd = (char*)g_malloc( path_max_size );
-	path = (char*)g_malloc( path_max_size );
+
 	file = (char*)g_malloc( path_max_size );
 	dir = g_path_get_dirname( __FILE__ );
 	file = g_build_filename( dir, "ui.glade", NULL );
@@ -78,10 +85,18 @@ int main( int argc, char **argv ) {
 
 	UI_builder = gtk_builder_new_from_file ( file );
 
+	g_free( dir );
+	g_free( file );
+
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
+    input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
 
+    // Close the program
     g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
+
+    // Select configuration file action
+    g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
 
     gtk_widget_show (window);
 
@@ -154,7 +169,7 @@ int main( int argc, char **argv ) {
 	if ( DEBUG || debug ) print_args();
 	if ( DEBUG || debug ) fprintf( stderr, "Parsing configuration....\n" );
 
-	parse_config();
+	// parse_config();
 
 	if ( DEBUG || debug ) fprintf( stderr, "Configuration has been parsed\n" );
 
@@ -406,45 +421,41 @@ void destroy( GtkWidget *widget, gpointer data ) {
     gtk_main_quit ();
 }
 
+/**
+ * Fills in dropdown with package configuration files
+ */
 int get_package_configs( GtkComboBoxText* select_package ) {
-	GSList *list;
-	GSList *init_list;
-	int size;
-	char *item;
+	struct dirent **list;
+	int n;
 
 	if ( DEBUG ) printf( "Searching for package configs...\n" );
 
-	list = Scandir( "." );
+	n = scandir( ".", &list, &filter_package_config_name, alphasort );
 
-	if ( list == NULL ) {
-		show_error( "Failed to get saved packages\n" );
-
+	if ( n == -1 ) {
+		fprintf( stderr, "Failed to scan directory '.': %s", strerror( errno ) );
 		return 1;
 	}
 
-	if ( !( size = g_slist_length( list ) ) ) {
-		if( DEBUG )printf( "There is no package configuration files\n" );
-		g_slist_free( list );
+	if ( DEBUG )printf("%i package files were found\n", n );
 
-		return 0;
+	while ( n-- ) {
+		if ( DEBUG )printf( "%s\n", list[ n ]->d_name );
+		gtk_combo_box_text_append_text( select_package, list[ n ]->d_name );
+		free( list[ n ] );
 	}
 
-	if ( DEBUG )printf("%i package files were found\n", size );
-	init_list = list;
-	item = g_malloc0( path_max_size );
-
-	do {
-		printf( "'%s'\n", (char*)list->data );
-		// strncpy( item, (char*)list->data, strlen( (char*)list->data ) );
-		// gtk_combo_box_text_append_text( select_package, "sdsd" );
-		memset( item, 0, path_max_size );
-		list = g_slist_next( list );
-	} while( list != NULL );
-
-	g_slist_free( init_list );
-	g_free( item );
+	free( list );
 
 	return 0;
+}
+
+/**
+ * Filters directory entry
+ * Returns 1 if directory entry is package config file
+ */
+int filter_package_config_name( const struct dirent* entry ) {
+	return g_str_has_suffix( entry->d_name, ".package" );
 }
 
 /**
@@ -3181,12 +3192,14 @@ int set_config_name() {
 	return 0;
 }
 
-int parse_config() {
+int parse_config( char *config_name ) {
 	char name[ path_max_size ];
 	char *keyword;
 
 	xmlDocPtr doc;
 	xmlNodePtr cur, prev, root;
+
+	if ( DEBUG )printf("Opening configuration file %s\n", config_name );
 
 	doc = xmlParseFile( config_name );
 
@@ -3214,34 +3227,34 @@ int parse_config() {
 
 	while ( cur != NULL ) {
 		if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_file" ) ) {
-			xml_to_config( include_file, cur );
+			xml_to_config( "include_file", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_file" ) ) {
-			xml_to_config( exclude_file, cur );
+			xml_to_config( "exclude_file", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_dir" ) ) {
-			xml_to_config( include_dir, cur );
+			xml_to_config( "include_dir", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_dir" ) ) {
-			xml_to_config( exclude_dir, cur );
+			xml_to_config( "exclude_dir", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_regexp" ) ) {
-			xml_to_config( include_regexp, cur );
+			xml_to_config( "include_regexp", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_regexp" ) ) {
-			xml_to_config( exclude_regexp, cur );
+			xml_to_config( "exclude_regexp", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"code" ) ) {
-			code = xmlNodeGetContent( cur );
+			g_datalist_set_data( config, "code", xmlNodeGetContent( cur ) );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"major" ) ) {
-			major = atoi( xmlNodeGetContent( cur ) );
+			g_datalist_set_data( config, "major", xmlNodeGetContent( cur ) );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"minor" ) ) {
-			minor = atoi( xmlNodeGetContent( cur ) );
+			g_datalist_set_data( config, "minor", xmlNodeGetContent( cur ) );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"patch" ) ) {
-			patch = atoi( xmlNodeGetContent( cur ) );
+			g_datalist_set_data( config, "patch", xmlNodeGetContent( cur ) );
 		}
 		 
 		cur = cur->next;
@@ -3254,24 +3267,72 @@ int parse_config() {
 	return 0;
 }
 
-int xml_to_config( struct llist *l, xmlNodePtr root ) {
+int xml_to_config( char *name, xmlNodePtr root ) {
 	int debug = 0;
+	GSList *config_item;
+
+	config_item = g_datalist_get_data( config, name );
 
 	xmlNodePtr cur = root->xmlChildrenNode;
 
 	while ( cur != NULL ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
 
-		if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
+		if ( !xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
 			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", xmlNodeGetContent( cur ) );
 
-			l->add( NULL, xmlNodeGetContent( cur ), l );
+			if ( NULL == config_item ) {
+				fprintf( stderr, "Configuration item %s is missing\n", name );
+				return 1;
+			}
+
+			config_item = g_slist_prepend( config_item, xmlNodeGetContent( cur ) );
 		}
 
 		cur = cur->next;
 	}
 
-	if ( DEBUG || debug ) l->print( l );
-
 	return 0;
+}
+
+void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
+	GSList
+		*include_dir,
+		*exclude_dir,
+		*include_file,
+		*exclude_file,
+		*include_regexp,
+		*exclude_regexp;
+
+	// Free previous data
+	if ( NULL != config ) {
+		if ( DEBUG )printf( "Clearing previous data\n" );
+		g_datalist_clear( config );
+		g_datalist_init( config );
+	}
+
+	config = (GData**)g_malloc0( sizeof( GData* ) );
+
+	if ( DEBUG )printf( "Fetching config data\n" );
+
+	char *name = g_malloc0( path_max_size );
+	char *path = g_malloc0( path_max_size );
+
+	g_datalist_set_data( config, "include_dir", include_dir );
+	g_datalist_set_data( config, "exclude_dir", exclude_dir );
+	g_datalist_set_data( config, "include_file", include_file );
+	g_datalist_set_data( config, "exclude_file", exclude_file );
+	g_datalist_set_data( config, "include_regexp", include_regexp );
+	g_datalist_set_data( config, "exclude_regexp", exclude_regexp );
+
+	// Get file name from combobox
+	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
+
+	if ( DEBUG )printf( "Config name from combobox: %s\n", name  );
+
+	path = g_build_filename( cwd, name, NULL );
+	parse_config( name );
+
+	g_free( name );
+	g_free( path );
 }
