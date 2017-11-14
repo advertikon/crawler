@@ -109,7 +109,9 @@ void show_error( char * );
 int get_package_configs( GtkComboBoxText* );
 int filter_package_config_name( const struct dirent* );
 void fill_in_config( GtkComboBox *widget, gpointer user_data );
-
+void update_config_view();
+void fill_in_input_buffer( void*, void* );
+void destroy_list( gpointer );
 
 
 #define MAX_LINE 400

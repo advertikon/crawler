@@ -33,12 +33,12 @@ size_t path_max_size;
 
 struct llist
 			*files,
-			*include_dir,
-			*exclude_dir,
-			*include_file,
-			*exclude_file,
-			*include_regexp,
-			*exclude_regexp,
+			// *include_dir,
+			// *exclude_dir,
+			// *include_file,
+			// *exclude_file,
+			// *include_regexp,
+			// *exclude_regexp,
 			*temp,
 			*filters,
 			*admin_t,
@@ -57,13 +57,14 @@ static struct tms st_cpu;
 static struct tms en_cpu;
 
 GtkEntry *input_code;
+GtkTextView *input_include_file;
+GtkTextBuffer *buffer_include_file;
 
 int main( int argc, char **argv ) {
 	GtkBuilder *UI_builder;
 	GSList *lp, *lst;
 	GtkWidget *window;
 	GtkComboBoxText *select_package;
-	GtkEntry *input_code;
 
 	char *path;
 	char *dir;
@@ -91,6 +92,7 @@ int main( int argc, char **argv ) {
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
     input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
+    buffer_include_file = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
 
     // Close the program
     g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
@@ -107,309 +109,309 @@ int main( int argc, char **argv ) {
 
 
 	return 1;
-	int debug = 0;
+	// int debug = 0;
 
-	char line[ MAX_LINE ];
+	// char line[ MAX_LINE ];
 
-	if( NULL == getcwd( cwd, path_max_size ) ) {
-		fprintf( stderr, "main: failed to get CWD" );
-		exit( 1 );
-	}
+	// if( NULL == getcwd( cwd, path_max_size ) ) {
+	// 	fprintf( stderr, "main: failed to get CWD" );
+	// 	exit( 1 );
+	// }
 
-	cwd_length = strlen( cwd );
+	// cwd_length = strlen( cwd );
 
-	int i;
-	regmatch_t *t_m;
+	// int i;
+	// regmatch_t *t_m;
 
-	code = (char*)malloc( MAX_LINE );
+	// code = (char*)malloc( MAX_LINE );
 
-	if ( NULL == code ) {
-		print_error( "Failed to allocate memory for code package code" );
-	}
+	// if ( NULL == code ) {
+	// 	print_error( "Failed to allocate memory for code package code" );
+	// }
 
-	memset( code, '\0', MAX_LINE );
+	// memset( code, '\0', MAX_LINE );
 
-	lang_dir = malloc( path_max_size );
+	// lang_dir = malloc( path_max_size );
 
-	if ( NULL == lang_dir ) {
-		print_error( "Failed allocate memory for lang_dir variable" );
-	}
+	// if ( NULL == lang_dir ) {
+	// 	print_error( "Failed allocate memory for lang_dir variable" );
+	// }
 
-	memset( lang_dir, '\0', path_max_size );
+	// memset( lang_dir, '\0', path_max_size );
 
-	signal( SIGINT, &int_handler );
-	signal( SIGWINCH, &sig_winch );
-	// signal( SIGCLD, &sig_cld );
+	// signal( SIGINT, &int_handler );
+	// signal( SIGWINCH, &sig_winch );
+	// // signal( SIGCLD, &sig_cld );
 
-	set_winsize();
+	// set_winsize();
 
-	if ( DEBUG || debug ) fprintf( stderr, "Initializing lists....\n" );
+	// if ( DEBUG || debug ) fprintf( stderr, "Initializing lists....\n" );
 
-	include_dir = init_llist();
-	exclude_dir = init_llist();
-	include_file = init_llist();
-	exclude_file = init_llist();
-	include_regexp = init_llist();
-	exclude_regexp = init_llist();
-	admin_t = init_llist();
-	catalog_t = init_llist();
-	common_t = init_llist();
-	temp = init_llist();
-	files = init_llist();
+	// // include_dir = init_llist();
+	// // exclude_dir = init_llist();
+	// // include_file = init_llist();
+	// // exclude_file = init_llist();
+	// // include_regexp = init_llist();
+	// // exclude_regexp = init_llist();
+	// admin_t = init_llist();
+	// catalog_t = init_llist();
+	// common_t = init_llist();
+	// temp = init_llist();
+	// files = init_llist();
 
-	parse_args( argv );
+	// parse_args( argv );
 
-	if ( 1 == get_arg( "code", &code ) ) {
-		fprintf( stderr, "Supply package code name as --code argument\n" );
-		exit( 1 );
-	}
+	// if ( 1 == get_arg( "code", &code ) ) {
+	// 	fprintf( stderr, "Supply package code name as --code argument\n" );
+	// 	exit( 1 );
+	// }
 
-	set_config_name();
+	// set_config_name();
 
-	if ( DEBUG || debug ) print_args();
-	if ( DEBUG || debug ) fprintf( stderr, "Parsing configuration....\n" );
+	// if ( DEBUG || debug ) print_args();
+	// if ( DEBUG || debug ) fprintf( stderr, "Parsing configuration....\n" );
 
-	// parse_config();
+	// // parse_config();
 
-	if ( DEBUG || debug ) fprintf( stderr, "Configuration has been parsed\n" );
+	// if ( DEBUG || debug ) fprintf( stderr, "Configuration has been parsed\n" );
 
-	while ( 1 ) {
-		if ( 0 == command ) {
-			show_commands();
-		}
+	// while ( 1 ) {
+	// 	if ( 0 == command ) {
+	// 		show_commands();
+	// 	}
 
-		memset( line, '\0', MAX_LINE );
+	// 	memset( line, '\0', MAX_LINE );
 
-		if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
-			perror( "Failed to read line from STDIN" );
-			return 1;
-		}
+	// 	if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
+	// 		perror( "Failed to read line from STDIN" );
+	// 		return 1;
+	// 	}
 
-		// Trim trailing newline
-		line[ strlen( line ) - 1 ] = '\0';
+	// 	// Trim trailing newline
+	// 	line[ strlen( line ) - 1 ] = '\0';
 
-		if ( strcmp( line, "exit" ) == 0 ) {
-			printf( "Exiting...\n" );
+	// 	if ( strcmp( line, "exit" ) == 0 ) {
+	// 		printf( "Exiting...\n" );
 		
-			break;
-		}
+	// 		break;
+	// 	}
 
-		if ( 0 == strcmp( "show_temp", line ) ) {
-			temp->print( temp );
-			continue;
-		}
+	// 	if ( 0 == strcmp( "show_temp", line ) ) {
+	// 		temp->print( temp );
+	// 		continue;
+	// 	}
 
-		if ( 0 == command ) {
-			switch( atoi( line ) ) {
-			case C_ADD_INCL_FOLDER:
-				if( 0 == start_add( include_dir ) ) {
-					command = C_ADD_INCL_FOLDER;
-				}
+	// 	if ( 0 == command ) {
+	// 		switch( atoi( line ) ) {
+	// 		case C_ADD_INCL_FOLDER:
+	// 			if( 0 == start_add( include_dir ) ) {
+	// 				command = C_ADD_INCL_FOLDER;
+	// 			}
 
-				break;
-			case C_DEL_INCL_FOLDER:
-				if( 0 == start_del( include_dir ) ) {
-					command = C_DEL_INCL_FOLDER;
-				}
+	// 			break;
+	// 		case C_DEL_INCL_FOLDER:
+	// 			if( 0 == start_del( include_dir ) ) {
+	// 				command = C_DEL_INCL_FOLDER;
+	// 			}
 
-				break;
-			case C_ADD_INCL_FILE:
-				if( 0 == start_add( include_file ) ) {
-					command = C_ADD_INCL_FILE;
-				}
+	// 			break;
+	// 		case C_ADD_INCL_FILE:
+	// 			if( 0 == start_add( include_file ) ) {
+	// 				command = C_ADD_INCL_FILE;
+	// 			}
 
-				break;
-			case C_DEL_INCL_FILE:
-				if( 0 == start_del( include_file ) ) {
-					command = C_DEL_INCL_FILE;
-				}
+	// 			break;
+	// 		case C_DEL_INCL_FILE:
+	// 			if( 0 == start_del( include_file ) ) {
+	// 				command = C_DEL_INCL_FILE;
+	// 			}
 
-				break;
-			case C_ADD_INCL_REGEXP:
-				if( 0 == start_add( include_regexp ) ) {
-					command = C_ADD_INCL_REGEXP;
-				}
+	// 			break;
+	// 		case C_ADD_INCL_REGEXP:
+	// 			if( 0 == start_add( include_regexp ) ) {
+	// 				command = C_ADD_INCL_REGEXP;
+	// 			}
 
-				break;
-			case C_DEL_INCL_REGEXP:
-				if( 0 == start_del( include_regexp ) ) {
-					command = C_DEL_INCL_REGEXP;
-				}
+	// 			break;
+	// 		case C_DEL_INCL_REGEXP:
+	// 			if( 0 == start_del( include_regexp ) ) {
+	// 				command = C_DEL_INCL_REGEXP;
+	// 			}
 
-				break;
-			case C_ADD_EXCL_FOLDER:
-				if( 0 == start_add( exclude_dir ) ) {
-					command = C_ADD_EXCL_FOLDER;
-				}
+	// 			break;
+	// 		case C_ADD_EXCL_FOLDER:
+	// 			if( 0 == start_add( exclude_dir ) ) {
+	// 				command = C_ADD_EXCL_FOLDER;
+	// 			}
 
-				break;
-			case C_DEL_EXCL_FOLDER:
-				if( 0 == start_del( exclude_dir ) ) {
-					command = C_DEL_EXCL_FOLDER;
-				}
+	// 			break;
+	// 		case C_DEL_EXCL_FOLDER:
+	// 			if( 0 == start_del( exclude_dir ) ) {
+	// 				command = C_DEL_EXCL_FOLDER;
+	// 			}
 
-				break;
-			case C_ADD_EXCL_FILE:
-				if( 0 == start_add( exclude_file ) ) {
-					command = C_ADD_EXCL_FILE;
-				}
+	// 			break;
+	// 		case C_ADD_EXCL_FILE:
+	// 			if( 0 == start_add( exclude_file ) ) {
+	// 				command = C_ADD_EXCL_FILE;
+	// 			}
 
-				break;
-			case C_DEL_EXCL_FILE:
-				if( 0 == start_del( exclude_file ) ) {
-					command = C_DEL_EXCL_FILE;
-				}
+	// 			break;
+	// 		case C_DEL_EXCL_FILE:
+	// 			if( 0 == start_del( exclude_file ) ) {
+	// 				command = C_DEL_EXCL_FILE;
+	// 			}
 
-				break;
-			case C_ADD_EXCL_REGEXP:
-				if( 0 == start_add( exclude_regexp ) ) {
-					command = C_ADD_EXCL_REGEXP;
-				}
+	// 			break;
+	// 		case C_ADD_EXCL_REGEXP:
+	// 			if( 0 == start_add( exclude_regexp ) ) {
+	// 				command = C_ADD_EXCL_REGEXP;
+	// 			}
 
-				break;
-			case C_DEL_EXCL_REGEXP:
-				if( 0 == start_del( exclude_regexp ) ) {
-					command = C_DEL_EXCL_REGEXP;
-				}
+	// 			break;
+	// 		case C_DEL_EXCL_REGEXP:
+	// 			if( 0 == start_del( exclude_regexp ) ) {
+	// 				command = C_DEL_EXCL_REGEXP;
+	// 			}
 
-				break;
-			case C_ITERATE:
-				files->empty( files );
-				files_count = 0;
-				total_size = 0;
-				start_clock();
-				iterate( cwd, &check_item, NULL, &on_iterate_error );
-				load_dependencies();
-				end_clock( "Time:" );
-				printf("%d files was selected\n", files_count );
-				printf( "Total size: %ld\n", total_size );
-				break;
-			case C_PRINT_FILES:
-				print_files();
-				break;
-			case C_PRINT_CONFIG:
-				print_config();
-				break;
-			case C_MAKE:
-				make_package();
-				break;
-			case C_SET_NAME:
-				command = C_SET_NAME;
-				printf( "Extension name >> " );
-				break;
-			case C_SET_MAJOR:
-				command = C_SET_MAJOR;
-				printf( "Major number >> " );
-				break;
-			case C_SET_MINOR:
-				command = C_SET_MINOR;
-				printf( "Manor number >> " );
-				break;
-			case C_SET_PATCH:
-				command = C_SET_PATCH;
-				printf( "Patch number >> " );
-				break;
-			default:
-				show_commands();
-				break;
-			}
+	// 			break;
+	// 		case C_ITERATE:
+	// 			files->empty( files );
+	// 			files_count = 0;
+	// 			total_size = 0;
+	// 			start_clock();
+	// 			iterate( cwd, &check_item, NULL, &on_iterate_error );
+	// 			load_dependencies();
+	// 			end_clock( "Time:" );
+	// 			printf("%d files was selected\n", files_count );
+	// 			printf( "Total size: %ld\n", total_size );
+	// 			break;
+	// 		case C_PRINT_FILES:
+	// 			print_files();
+	// 			break;
+	// 		case C_PRINT_CONFIG:
+	// 			print_config();
+	// 			break;
+	// 		case C_MAKE:
+	// 			make_package();
+	// 			break;
+	// 		case C_SET_NAME:
+	// 			command = C_SET_NAME;
+	// 			printf( "Extension name >> " );
+	// 			break;
+	// 		case C_SET_MAJOR:
+	// 			command = C_SET_MAJOR;
+	// 			printf( "Major number >> " );
+	// 			break;
+	// 		case C_SET_MINOR:
+	// 			command = C_SET_MINOR;
+	// 			printf( "Manor number >> " );
+	// 			break;
+	// 		case C_SET_PATCH:
+	// 			command = C_SET_PATCH;
+	// 			printf( "Patch number >> " );
+	// 			break;
+	// 		default:
+	// 			show_commands();
+	// 			break;
+	// 		}
 
-		} else if ( 0 != command ) {
-			if ( 1 == wait_confirm ) {
-				if ( 0 == strcmp( "y", line ) || 0 == strcmp( "Y", line ) ) {
-					if ( 1 == save_me ) {
-						confirmed_operation();
-					}
+	// 	} else if ( 0 != command ) {
+	// 		if ( 1 == wait_confirm ) {
+	// 			if ( 0 == strcmp( "y", line ) || 0 == strcmp( "Y", line ) ) {
+	// 				if ( 1 == save_me ) {
+	// 					confirmed_operation();
+	// 				}
 
-					end_operation();
+	// 				end_operation();
 
-					continue;
-				}
+	// 				continue;
+	// 			}
 
-				wait_confirm = 0;
-				save_me = 0;
-				printf( "Does not matter... \n" );
+	// 			wait_confirm = 0;
+	// 			save_me = 0;
+	// 			printf( "Does not matter... \n" );
 				
-				continue;
-			}
+	// 			continue;
+	// 		}
 
-			if ( 0 == strcmp( "q", line ) || 0 == strcmp( "s", line ) ) {
-				printf( "Are sure (y/n)?: " );
-				wait_confirm = 1;
+	// 		if ( 0 == strcmp( "q", line ) || 0 == strcmp( "s", line ) ) {
+	// 			printf( "Are sure (y/n)?: " );
+	// 			wait_confirm = 1;
 
-				if ( 's' == line[ 0 ] ) {
-					save_me = 1;
-				}
+	// 			if ( 's' == line[ 0 ] ) {
+	// 				save_me = 1;
+	// 			}
 
-				continue;
-			}
+	// 			continue;
+	// 		}
 
-			if ( NULL == temp ) {
-				temp = init_llist();
-			}
+	// 		if ( NULL == temp ) {
+	// 			temp = init_llist();
+	// 		}
 
-			switch( command ) {
-			case C_ADD_INCL_FOLDER:
-			case C_ADD_EXCL_FOLDER:
-			case C_ADD_INCL_FILE:
-			case C_ADD_EXCL_FILE:
-			case C_ADD_INCL_REGEXP:
-			case C_ADD_EXCL_REGEXP:
-				add_to( line );
-				break;
-			case C_DEL_INCL_FOLDER:
-				del_from( line, include_dir );
-				break;
-			case C_DEL_INCL_FILE:
-				del_from( line, include_file );
-				break;
-			case C_DEL_INCL_REGEXP:
-				del_from( line, include_regexp );
-				break;
-			case C_DEL_EXCL_FOLDER:
-				del_from( line, exclude_dir );
-				break;
-			case C_DEL_EXCL_FILE:
-				del_from( line, exclude_file );
-				break;
-			case C_DEL_EXCL_REGEXP:
-				del_from( line, exclude_regexp );
-				break;
-			case C_SET_NAME:
-				memset( code, '\0', MAX_LINE );
-				strncpy( code, line, MAX_LINE );
-				command = 0;
-				config_is_dirty = 1;
-				break;
-			case C_SET_MAJOR:
-				major = atoi( line );
-				minor = 0;
-				patch = 0;
-				command = 0;
-				config_is_dirty = 1;
-				break;
-			case C_SET_MINOR:
-				minor = atoi( line );
-				patch = 0;
-				command = 0;
-				config_is_dirty = 1;
-				break;
-			case C_SET_PATCH:
-				patch = atoi( line );
-				command = 0;
-				config_is_dirty = 1;
-				break;
-			default :
-				printf( "Unknown command: %d\n", command );
-				command = 0;
-			}
+	// 		switch( command ) {
+	// 		case C_ADD_INCL_FOLDER:
+	// 		case C_ADD_EXCL_FOLDER:
+	// 		case C_ADD_INCL_FILE:
+	// 		case C_ADD_EXCL_FILE:
+	// 		case C_ADD_INCL_REGEXP:
+	// 		case C_ADD_EXCL_REGEXP:
+	// 			add_to( line );
+	// 			break;
+	// 		case C_DEL_INCL_FOLDER:
+	// 			del_from( line, include_dir );
+	// 			break;
+	// 		case C_DEL_INCL_FILE:
+	// 			del_from( line, include_file );
+	// 			break;
+	// 		case C_DEL_INCL_REGEXP:
+	// 			del_from( line, include_regexp );
+	// 			break;
+	// 		case C_DEL_EXCL_FOLDER:
+	// 			del_from( line, exclude_dir );
+	// 			break;
+	// 		case C_DEL_EXCL_FILE:
+	// 			del_from( line, exclude_file );
+	// 			break;
+	// 		case C_DEL_EXCL_REGEXP:
+	// 			del_from( line, exclude_regexp );
+	// 			break;
+	// 		case C_SET_NAME:
+	// 			memset( code, '\0', MAX_LINE );
+	// 			strncpy( code, line, MAX_LINE );
+	// 			command = 0;
+	// 			config_is_dirty = 1;
+	// 			break;
+	// 		case C_SET_MAJOR:
+	// 			major = atoi( line );
+	// 			minor = 0;
+	// 			patch = 0;
+	// 			command = 0;
+	// 			config_is_dirty = 1;
+	// 			break;
+	// 		case C_SET_MINOR:
+	// 			minor = atoi( line );
+	// 			patch = 0;
+	// 			command = 0;
+	// 			config_is_dirty = 1;
+	// 			break;
+	// 		case C_SET_PATCH:
+	// 			patch = atoi( line );
+	// 			command = 0;
+	// 			config_is_dirty = 1;
+	// 			break;
+	// 		default :
+	// 			printf( "Unknown command: %d\n", command );
+	// 			command = 0;
+	// 		}
 
-		} else {
-			show_commands();
-		}
-	}
+	// 	} else {
+	// 		show_commands();
+	// 	}
+	// }
 
-	save_config();
+	// save_config();
 
 	return 0;
 }
@@ -611,57 +613,57 @@ int on_iterate_error( char *name ) {
  *
  */
 int save_config() {
-	xmlDocPtr doc;
-	xmlNodePtr root, child;
+	// xmlDocPtr doc;
+	// xmlNodePtr root, child;
 
-	char b[ 10 ];
+	// char b[ 10 ];
 
-	if ( 0 == config_is_dirty ) return 0;
+	// if ( 0 == config_is_dirty ) return 0;
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "save_config: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
-		exit( 1 );
-	}
+	// if ( -1 == chdir( cwd ) ) {
+	// 	fprintf( stderr, "save_config: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
+	// 	exit( 1 );
+	// }
 
-	doc = xmlNewDoc( "1.0" );
-	root = xmlNewNode( NULL, "config" );
-	xmlDocSetRootElement( doc, root );
+	// doc = xmlNewDoc( "1.0" );
+	// root = xmlNewNode( NULL, "config" );
+	// xmlDocSetRootElement( doc, root );
 
-	xmlAddChild( root, config_to_xml( "include_file", include_file ) );
-	xmlAddChild( root, config_to_xml( "exclude_file", exclude_file ) );
-	xmlAddChild( root, config_to_xml( "include_dir", include_dir ) );
-	xmlAddChild( root, config_to_xml( "exclude_dir", exclude_dir ) );
-	xmlAddChild( root, config_to_xml( "include_regexp", include_regexp ) );
-	xmlAddChild( root, config_to_xml( "exclude_regexp", exclude_regexp ) );
+	// xmlAddChild( root, config_to_xml( "include_file", include_file ) );
+	// xmlAddChild( root, config_to_xml( "exclude_file", exclude_file ) );
+	// xmlAddChild( root, config_to_xml( "include_dir", include_dir ) );
+	// xmlAddChild( root, config_to_xml( "exclude_dir", exclude_dir ) );
+	// xmlAddChild( root, config_to_xml( "include_regexp", include_regexp ) );
+	// xmlAddChild( root, config_to_xml( "exclude_regexp", exclude_regexp ) );
 
-	child = xmlNewNode( NULL, "code" );
-	xmlNodeAddContent( child, code );
-	xmlAddChild( root, child );
+	// child = xmlNewNode( NULL, "code" );
+	// xmlNodeAddContent( child, code );
+	// xmlAddChild( root, child );
 
-	child = xmlNewNode( NULL, "major" );
-	sprintf( b, "%d", major );
-	xmlNodeAddContent( child, b );
-	xmlAddChild( root, child );
+	// child = xmlNewNode( NULL, "major" );
+	// sprintf( b, "%d", major );
+	// xmlNodeAddContent( child, b );
+	// xmlAddChild( root, child );
 
-	child = xmlNewNode( NULL, "minor" );
-	sprintf( b, "%d", minor );
-	xmlNodeAddContent( child, b );
-	xmlAddChild( root, child );
+	// child = xmlNewNode( NULL, "minor" );
+	// sprintf( b, "%d", minor );
+	// xmlNodeAddContent( child, b );
+	// xmlAddChild( root, child );
 
-	child = xmlNewNode( NULL, "patch" );
-	sprintf( b, "%d", patch );
-	xmlNodeAddContent( child, b );
-	xmlAddChild( root, child );
+	// child = xmlNewNode( NULL, "patch" );
+	// sprintf( b, "%d", patch );
+	// xmlNodeAddContent( child, b );
+	// xmlAddChild( root, child );
 
-	if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
-		fprintf( stderr, "Configuration file was updated\n" );
+	// if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
+	// 	fprintf( stderr, "Configuration file was updated\n" );
 
-	} else {
-		fprintf( stderr, "Failed to update configuration file\n" );
-	}
+	// } else {
+	// 	fprintf( stderr, "Failed to update configuration file\n" );
+	// }
 
-	xmlFreeNode( child );
-	xmlFreeDoc( doc );
+	// xmlFreeNode( child );
+	// xmlFreeDoc( doc );
 
 	return 0;
 }
@@ -816,73 +818,73 @@ int del_from(  char *name, struct llist* l ) {
  *
  */
 int show_commands() {
-	char *line = malloc( win_size.ws_col + 1 );
-	memset( line, '-', win_size.ws_col );
-	line[ win_size.ws_col ] = '\0';
+	// char *line = malloc( win_size.ws_col + 1 );
+	// memset( line, '-', win_size.ws_col );
+	// line[ win_size.ws_col ] = '\0';
 
-	printf(
-		"%s\n" /* separator */
+	// printf(
+	// 	"%s\n" /* separator */
 
-		"%2d - Add included directories\n"
-		"%2d - Add excluded directories\n"
-		"%2d - Delete included directories\n"
-		"%2d - Delete excluded directories\n"
+	// 	"%2d - Add included directories\n"
+	// 	"%2d - Add excluded directories\n"
+	// 	"%2d - Delete included directories\n"
+	// 	"%2d - Delete excluded directories\n"
 
-		"%2d - Add included files\n"
-		"%2d - Add excluded files\n"
-		"%2d - Delete included files\n"
-		"%2d - Delete excluded files\n"
+	// 	"%2d - Add included files\n"
+	// 	"%2d - Add excluded files\n"
+	// 	"%2d - Delete included files\n"
+	// 	"%2d - Delete excluded files\n"
 
-		"%2d - Add included regexp\n"
-		"%2d - Add excluded regexp\n"
-		"%2d - Delete included regexp\n"
-		"%2d - Delete excluded regexp\n"
+	// 	"%2d - Add included regexp\n"
+	// 	"%2d - Add excluded regexp\n"
+	// 	"%2d - Delete included regexp\n"
+	// 	"%2d - Delete excluded regexp\n"
 
-		"%2d - Iterate over FS\n"
-		"%2d - Print files\n"
-		"%2d - Print configurations\n"
-		"%2d - Make package\n"
+	// 	"%2d - Iterate over FS\n"
+	// 	"%2d - Print files\n"
+	// 	"%2d - Print configurations\n"
+	// 	"%2d - Make package\n"
 
-		"%2d - Set module name\n"
-		"%2d - Set package major number\n"
-		"%2d - Set package minor number\n"
-		"%2d - Set package patch number\n"
+	// 	"%2d - Set module name\n"
+	// 	"%2d - Set package major number\n"
+	// 	"%2d - Set package minor number\n"
+	// 	"%2d - Set package patch number\n"
 
-		"%s\n" /* Separator */
+	// 	"%s\n" /* Separator */
 
-		"Make your choice > ",
+	// 	"Make your choice > ",
 
-		line,
+	// 	line,
 
-		C_ADD_INCL_FOLDER,
-		C_ADD_EXCL_FOLDER,
-		C_DEL_INCL_FOLDER,
-		C_DEL_EXCL_FOLDER,
+	// 	C_ADD_INCL_FOLDER,
+	// 	C_ADD_EXCL_FOLDER,
+	// 	C_DEL_INCL_FOLDER,
+	// 	C_DEL_EXCL_FOLDER,
 
-		C_ADD_INCL_FILE,
-		C_ADD_EXCL_FILE,
-		C_DEL_INCL_FILE,
-		C_DEL_EXCL_FILE,
+	// 	C_ADD_INCL_FILE,
+	// 	C_ADD_EXCL_FILE,
+	// 	C_DEL_INCL_FILE,
+	// 	C_DEL_EXCL_FILE,
 
-		C_ADD_INCL_REGEXP,
-		C_ADD_EXCL_REGEXP,
-		C_DEL_INCL_REGEXP,
-		C_DEL_EXCL_REGEXP,
+	// 	C_ADD_INCL_REGEXP,
+	// 	C_ADD_EXCL_REGEXP,
+	// 	C_DEL_INCL_REGEXP,
+	// 	C_DEL_EXCL_REGEXP,
 
-		C_ITERATE,
-		C_PRINT_FILES,
-		C_PRINT_CONFIG,
-		C_MAKE,
+	// 	C_ITERATE,
+	// 	C_PRINT_FILES,
+	// 	C_PRINT_CONFIG,
+	// 	C_MAKE,
 
-		C_SET_NAME,
-		C_SET_MAJOR,
-		C_SET_MINOR,
-		C_SET_PATCH,
+	// 	C_SET_NAME,
+	// 	C_SET_MAJOR,
+	// 	C_SET_MINOR,
+	// 	C_SET_PATCH,
 
-		line
-	);
+	// 	line
+	// );
 
-	free( line );
+	// free( line );
 }
 
 /**
@@ -890,46 +892,46 @@ int show_commands() {
  *
  */
 int confirmed_operation() {
-	switch ( command ) {
-	case C_ADD_INCL_FOLDER:
-		add_to_config( include_dir );
-		break;
-	case C_DEL_INCL_FOLDER:
-		remove_from_config( include_dir );
-		break;
-	case C_ADD_INCL_FILE:
-		add_to_config( include_file );
-		break;
-	case C_DEL_INCL_FILE:
-		remove_from_config( include_file );
-		break;
-	case C_ADD_INCL_REGEXP:
-		add_to_config( include_regexp );
-		break;
-	case C_DEL_INCL_REGEXP:
-		remove_from_config( include_regexp );
-		break;
-	case C_ADD_EXCL_FOLDER:
-		add_to_config( exclude_dir );
-		break;
-	case C_DEL_EXCL_FOLDER:
-		remove_from_config( exclude_dir );
-		break;
-	case C_ADD_EXCL_FILE:
-		add_to_config( exclude_file );
-		break;
-	case C_DEL_EXCL_FILE:
-		remove_from_config( exclude_file );
-		break;
-	case C_ADD_EXCL_REGEXP:
-		add_to_config( exclude_regexp );
-		break;
-	case C_DEL_EXCL_REGEXP:
-		remove_from_config( exclude_regexp );
-		break;
-	default:
-		print_error( "Invalid command: %d\n", command );
-	}
+	// switch ( command ) {
+	// case C_ADD_INCL_FOLDER:
+	// 	add_to_config( include_dir );
+	// 	break;
+	// case C_DEL_INCL_FOLDER:
+	// 	remove_from_config( include_dir );
+	// 	break;
+	// case C_ADD_INCL_FILE:
+	// 	add_to_config( include_file );
+	// 	break;
+	// case C_DEL_INCL_FILE:
+	// 	remove_from_config( include_file );
+	// 	break;
+	// case C_ADD_INCL_REGEXP:
+	// 	add_to_config( include_regexp );
+	// 	break;
+	// case C_DEL_INCL_REGEXP:
+	// 	remove_from_config( include_regexp );
+	// 	break;
+	// case C_ADD_EXCL_FOLDER:
+	// 	add_to_config( exclude_dir );
+	// 	break;
+	// case C_DEL_EXCL_FOLDER:
+	// 	remove_from_config( exclude_dir );
+	// 	break;
+	// case C_ADD_EXCL_FILE:
+	// 	add_to_config( exclude_file );
+	// 	break;
+	// case C_DEL_EXCL_FILE:
+	// 	remove_from_config( exclude_file );
+	// 	break;
+	// case C_ADD_EXCL_REGEXP:
+	// 	add_to_config( exclude_regexp );
+	// 	break;
+	// case C_DEL_EXCL_REGEXP:
+	// 	remove_from_config( exclude_regexp );
+	// 	break;
+	// default:
+	// 	print_error( "Invalid command: %d\n", command );
+	// }
 
 	return 0;
 }
@@ -1037,61 +1039,61 @@ void int_handler( int s ) {
  * Default: fail
  */
 int check_file(  char *name ) {
-	int debug = 0;
+	// int debug = 0;
 
-	if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
+	// if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
 
-	char dir[ path_max_size ];
-	char *pos;
+	// char dir[ path_max_size ];
+	// char *pos;
 
-	int max_incl_dir;
-	int max_excl_dir;
+	// int max_incl_dir;
+	// int max_excl_dir;
 
-	// File is in the include list
-	if ( 0 == include_file->has_value( name, include_file ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
-		return 0;
-	}
+	// // File is in the include list
+	// if ( 0 == include_file->has_value( name, include_file ) ) {
+	// 	if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
+	// 	return 0;
+	// }
 
-	// File is in the exclude list
-	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
-		return 1;
-	}
+	// // File is in the exclude list
+	// if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
+	// 	if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
+	// 	return 1;
+	// }
 
-	strncpy( dir, name, path_max_size );
-	pos = strrchr( dir, '/' );
+	// strncpy( dir, name, path_max_size );
+	// pos = strrchr( dir, '/' );
 
-	if ( NULL != pos ) {
-		*pos = '\0';
+	// if ( NULL != pos ) {
+	// 	*pos = '\0';
 
-		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
+	// 	if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
 
-		collide_length( dir, include_dir, &max_incl_dir );
-		collide_length( dir, exclude_dir, &max_excl_dir );
+	// 	collide_length( dir, include_dir, &max_incl_dir );
+	// 	collide_length( dir, exclude_dir, &max_excl_dir );
 
-		if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
+	// 	if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
 		
-		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
-			if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
-			return 0;
-		}
+	// 	if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
+	// 		if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
+	// 		return 0;
+	// 	}
 
-		if ( max_excl_dir > 0 ) {
-			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
-			return 1;
-		}
-	}
+	// 	if ( max_excl_dir > 0 ) {
+	// 		if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
+	// 		return 1;
+	// 	}
+	// }
 
-	if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
+	// if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
 
-	if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
+	// if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
+	// 	if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
 
-		return 0;
-	}
+	// 	return 0;
+	// }
 
-	if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
+	// if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
 
 	return 1;
 }
@@ -3196,6 +3198,8 @@ int parse_config( char *config_name ) {
 	char name[ path_max_size ];
 	char *keyword;
 
+	g_return_val_if_fail( NULL != config, 1 );
+
 	xmlDocPtr doc;
 	xmlNodePtr cur, prev, root;
 
@@ -3227,9 +3231,11 @@ int parse_config( char *config_name ) {
 
 	while ( cur != NULL ) {
 		if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_file" ) ) {
+			if ( DEBUG )printf( "Fill in 'include_file' list\n" );
 			xml_to_config( "include_file", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_file" ) ) {
+
 			xml_to_config( "exclude_file", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_dir" ) ) {
@@ -3269,28 +3275,50 @@ int parse_config( char *config_name ) {
 
 int xml_to_config( char *name, xmlNodePtr root ) {
 	int debug = 0;
-	GSList *config_item;
-
+	GSList *config_item = NULL;
+	GSList *new_pointer = NULL;
+	char *value;
+	char *temp = g_malloc( MAX_LINE );
+	
 	config_item = g_datalist_get_data( config, name );
-
 	xmlNodePtr cur = root->xmlChildrenNode;
+
+	g_return_val_if_fail( NULL != config_item, 1 );
 
 	while ( cur != NULL ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
 
 		if ( !xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
-			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", xmlNodeGetContent( cur ) );
+			memset( temp, 0, MAX_LINE );
+			temp = strncpy( temp, xmlNodeGetContent( cur ), MAX_LINE );
+			value = g_malloc( strlen( temp ) + 1 );
+			value = strncpy( value, temp, strlen( temp ) + 1 );
 
-			if ( NULL == config_item ) {
-				fprintf( stderr, "Configuration item %s is missing\n", name );
-				return 1;
+			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", value );
+
+			if ( config_item->data == NULL ) {
+				config_item->data = value;
+				if ( DEBUG )printf( "Populating first list item\n" );
+
+			} else {
+				new_pointer = g_slist_prepend( config_item, value );
+				if ( DEBUG )printf( "Prepending to the list\n" );
 			}
-
-			config_item = g_slist_prepend( config_item, xmlNodeGetContent( cur ) );
 		}
 
 		cur = cur->next;
+	};
+
+	if ( NULL != new_pointer && new_pointer != config_item ) {
+		
+		// Save anew since pointer is different now
+		g_datalist_id_remove_no_notify( config, g_quark_from_string( name ) );
+		g_datalist_id_set_data_full( config, g_quark_from_string( name ), new_pointer, &destroy_list );
+
+		if ( DEBUG )printf( "Re-saving configuration '%s'\n", name );
 	}
+
+	g_free( temp );
 
 	return 0;
 }
@@ -3300,12 +3328,12 @@ int xml_to_config( char *name, xmlNodePtr root ) {
  */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	GSList
-		*include_dir,
-		*exclude_dir,
-		*include_file,
-		*exclude_file,
-		*include_regexp,
-		*exclude_regexp;
+		*include_dir = g_slist_alloc(),
+		*exclude_dir = g_slist_alloc(),
+		*include_file = g_slist_alloc(),
+		*exclude_file = g_slist_alloc(),
+		*include_regexp = g_slist_alloc(),
+		*exclude_regexp = g_slist_alloc();
 
 	// Free previous data
 	if ( NULL != config ) {
@@ -3319,23 +3347,76 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	if ( DEBUG )printf( "Fetching config data\n" );
 
 	char *name = g_malloc0( path_max_size );
-	char *path = g_malloc0( path_max_size );
 
-	g_datalist_set_data( config, "include_dir", include_dir );
-	g_datalist_set_data( config, "exclude_dir", exclude_dir );
-	g_datalist_set_data( config, "include_file", include_file );
-	g_datalist_set_data( config, "exclude_file", exclude_file );
-	g_datalist_set_data( config, "include_regexp", include_regexp );
-	g_datalist_set_data( config, "exclude_regexp", exclude_regexp );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "include_dir" ), include_dir, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_dir" ), exclude_dir, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "include_file" ), include_file, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_file" ), exclude_file, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "include_regexp" ), include_regexp, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_regexp" ), exclude_regexp, &destroy_list );
 
 	// Get file name from combobox
 	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
 
 	if ( DEBUG )printf( "Config name from combobox: %s\n", name  );
 
-	path = g_build_filename( cwd, name, NULL );
 	parse_config( name );
-
 	g_free( name );
-	g_free( path );
+
+	update_config_view();
+}
+
+/**
+ * Callback to free list occupied 
+ */
+void destroy_list( gpointer list ) {
+	if ( DEBUG )printf("Freeing memory consumed by GSList\n" );
+
+	g_list_free( list );
+}
+
+/**
+ * Fills in view with configuration date
+ */
+void update_config_view() {
+	GSList *include_file;
+
+	if ( DEBUG )printf( "Updating configuration view...\n" );
+
+	g_return_if_fail( NULL != config );
+	g_return_if_fail( NULL != input_code );
+	g_return_if_fail( NULL != buffer_include_file );
+
+	// Package code
+	gtk_entry_set_text( input_code,  g_datalist_get_data( config, "code" ) );
+	if ( DEBUG )printf( "Set package code\n" );
+
+	// Included files
+	include_file = g_datalist_get_data( config, "include_file" );
+	g_return_if_fail( NULL != include_file );
+
+	GSList *current;
+	current = g_datalist_get_data( config, "include_file" );
+	printf( "Pointer: %p\n", current );
+	printf("start printing data\n");
+	do {
+		printf( "Value: %s\n", current->data );
+		current = current->next;
+	} while( current );
+
+	g_slist_foreach( include_file, &fill_in_input_buffer, buffer_include_file );
+
+
+}
+
+/**
+ * Fill ins text buffer with specific text
+ */
+void fill_in_input_buffer( void *text, void *buffer ) {
+	g_return_if_fail( buffer != NULL );
+	g_return_if_fail( text != NULL );
+
+	if ( DEBUG )printf( "Adding text '%s' to text buffer\n", (char*)text );
+
+	gtk_text_buffer_set_text( buffer, text, strlen( text ) + 1 );
 }
