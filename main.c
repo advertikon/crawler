@@ -3295,6 +3295,9 @@ int xml_to_config( char *name, xmlNodePtr root ) {
 	return 0;
 }
 
+/**
+ * Get configuration data from config file and put it into inner storage plus fill in corresponding inputs 
+ */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	GSList
 		*include_dir,
