@@ -57,8 +57,18 @@ static struct tms st_cpu;
 static struct tms en_cpu;
 
 GtkEntry *input_code;
-GtkTextView *input_include_file;
+// GtkTextView *input_include_file;
+// GtkTextView *input_exclude_file;
+// GtkTextView *input_include_folder;
+// GtkTextView *input_exclude_folder;
+// GtkTextView *input_include_regex;
+// GtkTextView *input_exclude_regex;
 GtkTextBuffer *buffer_include_file;
+GtkTextBuffer *buffer_exclude_file;
+GtkTextBuffer *buffer_include_folder;
+GtkTextBuffer *buffer_exclude_folder;
+GtkTextBuffer *buffer_include_regex;
+GtkTextBuffer *buffer_exclude_regex;
 
 int main( int argc, char **argv ) {
 	GtkBuilder *UI_builder;
@@ -89,10 +99,22 @@ int main( int argc, char **argv ) {
 	g_free( dir );
 	g_free( file );
 
+	// Main window
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
+
+    // Select package combobox
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
+
+    // Module code input
     input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
-    buffer_include_file = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
+
+    // Filter inputs
+    buffer_include_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
+    buffer_exclude_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_file" ) );
+    buffer_include_folder = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_folder" ) );
+    buffer_exclude_folder = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_folder" ) );
+    buffer_include_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_regex" ) );
+    buffer_exclude_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_regex" ) );
 
     // Close the program
     g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
@@ -102,11 +124,9 @@ int main( int argc, char **argv ) {
 
     gtk_widget_show (window);
 
+    // Populate select package combobox with data
     get_package_configs( select_package );
-    
     gtk_main ();
-
-
 
 	return 1;
 	// int debug = 0;
@@ -3235,20 +3255,24 @@ int parse_config( char *config_name ) {
 			xml_to_config( "include_file", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_file" ) ) {
-
+			if ( DEBUG )printf( "Fill in 'exclude_file' list\n" );
 			xml_to_config( "exclude_file", cur );
 
-		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_dir" ) ) {
-			xml_to_config( "include_dir", cur );
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_folder" ) ) {
+			if ( DEBUG )printf( "Fill in 'include_folder' list\n" );
+			xml_to_config( "include_folder", cur );
 
-		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_dir" ) ) {
-			xml_to_config( "exclude_dir", cur );
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_folder" ) ) {
+			if ( DEBUG )printf( "Fill in 'exclude_folder' list\n" );
+			xml_to_config( "exclude_folder", cur );
 
-		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_regexp" ) ) {
-			xml_to_config( "include_regexp", cur );
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"include_regex" ) ) {
+			if ( DEBUG )printf( "Fill in 'include_regex' list\n" );
+			xml_to_config( "include_regex", cur );
 
-		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_regexp" ) ) {
-			xml_to_config( "exclude_regexp", cur );
+		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"exclude_regex" ) ) {
+			if ( DEBUG )printf( "Fill in 'exclude_regex' list\n" );
+			xml_to_config( "exclude_regex", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"code" ) ) {
 			g_datalist_set_data( config, "code", xmlNodeGetContent( cur ) );
@@ -3326,44 +3350,50 @@ int xml_to_config( char *name, xmlNodePtr root ) {
 
 /**
  * Get configuration data from config file and put it into inner storage plus fill in corresponding inputs 
+ * Change combobox event handler
  */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	GSList
-		*include_dir = g_slist_alloc(),
-		*exclude_dir = g_slist_alloc(),
+		*include_folder = g_slist_alloc(),
+		*exclude_folder = g_slist_alloc(),
 		*include_file = g_slist_alloc(),
 		*exclude_file = g_slist_alloc(),
-		*include_regexp = g_slist_alloc(),
-		*exclude_regexp = g_slist_alloc();
+		*include_regex = g_slist_alloc(),
+		*exclude_regex = g_slist_alloc();
+
+	if ( DEBUG )printf( "Fetching config data\n" );
 
 	// Free previous data
 	if ( NULL != config ) {
 		if ( DEBUG )printf( "Clearing previous data\n" );
 		g_datalist_clear( config );
 		g_datalist_init( config );
+
+	} else {
+		printf( "Nothing to free\n" );
 	}
 
 	config = (GData**)g_malloc0( sizeof( GData* ) );
 
-	if ( DEBUG )printf( "Fetching config data\n" );
-
 	char *name = g_malloc0( path_max_size );
 
-	g_datalist_id_set_data_full( config, g_quark_from_string( "include_dir" ), include_dir, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_dir" ), exclude_dir, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "include_folder" ), include_folder, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_folder" ), exclude_folder, &destroy_list );
 	g_datalist_id_set_data_full( config, g_quark_from_string( "include_file" ), include_file, &destroy_list );
 	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_file" ), exclude_file, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "include_regexp" ), include_regexp, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_regexp" ), exclude_regexp, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "include_regex" ), include_regex, &destroy_list );
+	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_regex" ), exclude_regex, &destroy_list );
 
 	// Get file name from combobox
 	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
 
 	if ( DEBUG )printf( "Config name from combobox: %s\n", name  );
 
+	// Fill in config structure from config file
 	parse_config( name );
 	g_free( name );
 
+	// Update configuration tab
 	update_config_view();
 }
 
@@ -3373,7 +3403,19 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 void destroy_list( gpointer list ) {
 	if ( DEBUG )printf("Freeing memory consumed by GSList\n" );
 
-	g_list_free( list );
+	GSList *next;
+	GSList *item;
+
+	g_return_if_fail( NULL != list );
+
+	item = list;
+
+	while( item ) {
+		next = item->next;
+		g_free( item->data );
+		item = next;
+	}
+	// g_list_free( list );
 }
 
 /**
@@ -3381,12 +3423,24 @@ void destroy_list( gpointer list ) {
  */
 void update_config_view() {
 	GSList *include_file;
+	GSList *exclude_file;
+	GSList *include_folder;
+	GSList *exclude_folder;
+	GSList *include_regex;
+	GSList *exclude_regex;
 
 	if ( DEBUG )printf( "Updating configuration view...\n" );
 
 	g_return_if_fail( NULL != config );
 	g_return_if_fail( NULL != input_code );
 	g_return_if_fail( NULL != buffer_include_file );
+	g_return_if_fail( NULL != buffer_exclude_file );
+	g_return_if_fail( NULL != buffer_include_folder );
+	g_return_if_fail( NULL != buffer_exclude_folder );
+	g_return_if_fail( NULL != buffer_include_regex );
+	g_return_if_fail( NULL != buffer_exclude_regex );
+
+	clear_config_buffers();
 
 	// Package code
 	gtk_entry_set_text( input_code,  g_datalist_get_data( config, "code" ) );
@@ -3400,7 +3454,45 @@ void update_config_view() {
 
 	g_slist_foreach( include_file, &fill_in_input_buffer, buffer_include_file );
 
+	// Excluded files
+	exclude_file = g_datalist_get_data( config, "exclude_file" );
+	g_return_if_fail( NULL != exclude_file );
 
+	dump_slist( exclude_file );
+
+	g_slist_foreach( exclude_file, &fill_in_input_buffer, buffer_exclude_file );
+
+	// Included folders
+	include_folder = g_datalist_get_data( config, "include_folder" );
+	g_return_if_fail( NULL != include_folder );
+
+	dump_slist( include_folder );
+
+	g_slist_foreach( include_folder, &fill_in_input_buffer, buffer_include_folder );
+
+	// Excluded folders
+	exclude_folder = g_datalist_get_data( config, "exclude_folder" );
+	g_return_if_fail( NULL != exclude_folder );
+
+	dump_slist( exclude_folder );
+
+	g_slist_foreach( exclude_folder, &fill_in_input_buffer, buffer_exclude_folder );
+
+	// Included regex
+	include_regex = g_datalist_get_data( config, "include_regex" );
+	g_return_if_fail( NULL != include_regex );
+
+	dump_slist( include_regex );
+
+	g_slist_foreach( include_regex, &fill_in_input_buffer, buffer_include_regex );
+
+	// Excluded regex
+	exclude_regex = g_datalist_get_data( config, "exclude_regex" );
+	g_return_if_fail( NULL != exclude_regex );
+
+	dump_slist( exclude_regex );
+
+	g_slist_foreach( exclude_regex, &fill_in_input_buffer, buffer_exclude_regex );
 }
 
 /**
@@ -3437,3 +3529,41 @@ void fill_in_input_buffer( void *text, void *buffer ) {
 	g_free( start );
 	g_free( end );
 }
+
+void clear_config_buffers() {
+	GtkTextBuffer *list[] = {
+		buffer_include_file,
+		buffer_exclude_file,
+		buffer_include_folder,
+		buffer_exclude_folder,
+		buffer_include_regex,
+		buffer_exclude_regex,
+		NULL
+	};
+
+	GtkTextIter *start;
+	GtkTextIter *end;
+	int i = 0;
+
+	start = g_malloc0( sizeof( GtkTextIter ) );
+	end = g_malloc0( sizeof( GtkTextIter ) );
+
+	while ( list[ i ] != NULL ) {
+printf( "Clearing buffer: %p\n", list[ i ] );
+		gtk_text_buffer_get_bounds( list[ i ], start, end );
+		gtk_text_buffer_delete ( list[ i ], start, end );
+		i++;
+	}
+
+	g_free( start );
+	g_free( end );
+
+	// gtk_text_buffer_set_text( buffer_include_file, "", 1 );
+	// gtk_text_buffer_set_text( buffer_exclude_file, "", 1 );
+	// gtk_text_buffer_set_text( buffer_include_folder, "", 1 );
+	// gtk_text_buffer_set_text( buffer_exclude_folder, "", 1 );
+	// gtk_text_buffer_set_text( buffer_include_regex, "", 1 );
+	// gtk_text_buffer_set_text( buffer_exclude_regex, "", 1  );
+}
+
+

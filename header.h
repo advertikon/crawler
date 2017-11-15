@@ -112,6 +112,8 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data );
 void update_config_view();
 void fill_in_input_buffer( void*, void* );
 void destroy_list( gpointer );
+void clear_config_buffers( void );
+
 
 
 #define MAX_LINE 400
