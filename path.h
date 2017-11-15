@@ -12,6 +12,7 @@
 #include <gtk/gtk.h>
 #include <dirent.h>
 #include <string.h>
+#include <wchar.h>
 
 #ifdef PATH_MAX
 	static long pathmax = PATH_MAX;
@@ -28,5 +29,7 @@ static long xsi_version = 0;
 size_t get_path_max_size( void );
 glob_t* Glob( const char *restrict );
 GSList* Scandir( char *dirname );
+void dump_slist( GSList* );
+void dum_string( char * );
 
 #endif

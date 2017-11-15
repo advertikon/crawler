@@ -94,3 +94,77 @@ GSList* Scandir( char *dirname ) {
 
 	return list;
 }
+
+/**
+ * Dumps textual contents of GSList
+ */
+void dump_slist( GSList *list ) {
+	GSList *current = NULL;
+
+	g_return_if_fail( NULL != list );
+
+	current = list;
+	printf( "\nGSList contents (%p):\n", current );
+
+	do {
+		printf( "[%p]->data[%p]%s\n", current, current->data, (char*)current->data );
+		current = current->next;
+
+	} while ( current );
+
+	printf( "\n" );
+}
+
+/**
+ * Dumps string
+ */
+void dump_string( char *string ) {
+	char *p = string;
+	int i = 0;
+	int max = 1000;
+	char
+		*s_str = g_malloc0( max ),
+		*h_str = g_malloc0( max ),
+		*i_str = g_malloc0( max ),
+		// *p_str = g_malloc0( max ),
+		*temp = g_malloc0( max );
+
+	strcpy( s_str, "str: " );
+	strcpy( i_str, "int: " );
+	strcpy( h_str, "hex: " );
+
+	printf( "Dumping the string:\n" );
+	printf( "%s\n", p );
+
+	while( *p != '\0' ) {
+		sprintf( temp, "%11c", *p );
+		strncat( s_str, temp, strlen( temp ) );
+		memset( temp, 0, max );
+
+		sprintf( temp, "%11x", *p );
+		strncat( h_str, temp, strlen( temp ) );
+		memset( temp, 0, max );
+
+		sprintf( temp, "%11u", *p ); 
+		strncat( i_str, temp, strlen( temp ) );
+		memset( temp, 0, max );
+
+		// sprintf( temp, "%11p", p );
+		// strncat( p_str, temp, strlen( temp ) );
+		// memset( temp, 0, max );
+
+		p++;
+		if ( i++ > 30 )break;
+	}
+
+	printf( "%s\n", s_str );
+	printf( "%s\n", h_str );
+	printf( "%s\n", i_str );
+	// printf( "%s\n", p_str );
+
+	g_free( s_str );
+	g_free( h_str );
+	g_free( i_str );
+	// g_free( p_str );
+	g_free( temp );
+}

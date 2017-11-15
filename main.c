@@ -3276,17 +3276,18 @@ int parse_config( char *config_name ) {
 int xml_to_config( char *name, xmlNodePtr root ) {
 	int debug = 0;
 	GSList *config_item = NULL;
-	GSList *new_pointer = NULL;
+	GSList *old_pointer = NULL;
 	char *value;
 	char *temp = g_malloc( MAX_LINE );
 	
 	config_item = g_datalist_get_data( config, name );
+	old_pointer = config_item;
 	xmlNodePtr cur = root->xmlChildrenNode;
 
 	g_return_val_if_fail( NULL != config_item, 1 );
 
 	while ( cur != NULL ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
+		// if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
 
 		if ( !xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
 			memset( temp, 0, MAX_LINE );
@@ -3301,19 +3302,19 @@ int xml_to_config( char *name, xmlNodePtr root ) {
 				if ( DEBUG )printf( "Populating first list item\n" );
 
 			} else {
-				new_pointer = g_slist_prepend( config_item, value );
-				if ( DEBUG )printf( "Prepending to the list\n" );
+				config_item = g_slist_prepend( config_item, value );
+				if ( DEBUG )printf( "Prepending to the list. New pointer: %p\n", config_item );
 			}
 		}
 
 		cur = cur->next;
 	};
 
-	if ( NULL != new_pointer && new_pointer != config_item ) {
+	if ( old_pointer != config_item ) {
 		
 		// Save anew since pointer is different now
 		g_datalist_id_remove_no_notify( config, g_quark_from_string( name ) );
-		g_datalist_id_set_data_full( config, g_quark_from_string( name ), new_pointer, &destroy_list );
+		g_datalist_id_set_data_full( config, g_quark_from_string( name ), config_item, &destroy_list );
 
 		if ( DEBUG )printf( "Re-saving configuration '%s'\n", name );
 	}
@@ -3395,14 +3396,7 @@ void update_config_view() {
 	include_file = g_datalist_get_data( config, "include_file" );
 	g_return_if_fail( NULL != include_file );
 
-	GSList *current;
-	current = g_datalist_get_data( config, "include_file" );
-	printf( "Pointer: %p\n", current );
-	printf("start printing data\n");
-	do {
-		printf( "Value: %s\n", current->data );
-		current = current->next;
-	} while( current );
+	dump_slist( include_file );
 
 	g_slist_foreach( include_file, &fill_in_input_buffer, buffer_include_file );
 
@@ -3414,9 +3408,32 @@ void update_config_view() {
  */
 void fill_in_input_buffer( void *text, void *buffer ) {
 	g_return_if_fail( buffer != NULL );
-	g_return_if_fail( text != NULL );
+	GtkTextIter *start;
+	GtkTextIter *end;
+	char *new_text;
+
+	// Empty list
+	if ( text == NULL ) return;
 
 	if ( DEBUG )printf( "Adding text '%s' to text buffer\n", (char*)text );
 
-	gtk_text_buffer_set_text( buffer, text, strlen( text ) + 1 );
+	start = g_malloc0( sizeof( GtkTextIter ) );
+	end = g_malloc0( sizeof( GtkTextIter ) );
+
+	gtk_text_buffer_get_bounds( buffer, start, end );
+
+	// Not first line - prepend newline character
+	if ( !gtk_text_iter_equal( start, end ) ) {
+		new_text = g_malloc0( strlen( text ) + 2 );
+		memcpy( new_text, "\n", 1 );
+		strncat( new_text, text, strlen( text ) );
+		gtk_text_buffer_insert( buffer, end, new_text, -1 );
+		g_free( new_text );
+
+	} else {
+		gtk_text_buffer_insert( buffer, end, text, -1 );
+	}
+
+	g_free( start );
+	g_free( end );
 }
