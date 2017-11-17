@@ -99,12 +99,10 @@ GSList* Scandir( char *dirname ) {
  * Dumps textual contents of GSList
  */
 void dump_slist( GSList *list ) {
-	GSList *current = NULL;
-
-	g_return_if_fail( NULL != list );
-
-	current = list;
+	GSList *current = list;
 	printf( "\nGSList contents (%p):\n", current );
+
+	if ( NULL == list ) return;
 
 	do {
 		printf( "[%p]->data[%p]%s\n", current, current->data, (char*)current->data );
@@ -167,4 +165,23 @@ void dump_string( char *string ) {
 	g_free( i_str );
 	// g_free( p_str );
 	g_free( temp );
+}
+
+/**
+ * Dumps hash-list data
+ */
+void dump_hash( gpointer key, gpointer value, gpointer data ) {
+	GSList *next;
+
+	printf( "Hash contents:\n" );
+	printf( "%s:\n", (gchar*)key );
+
+	next = (GSList*)value;
+
+	while( next ) {
+		printf( "\t%s\n", (gchar*)next->data );
+		next = next->next;
+	}
+
+	printf( "\n" );
 }

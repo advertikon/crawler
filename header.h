@@ -113,7 +113,9 @@ void update_config_view();
 void fill_in_input_buffer( void*, void* );
 void destroy_list( gpointer );
 void clear_config_buffers( void );
-
+void init_filter_names( void );
+void config_value_clean( gpointer );
+void config_key_clean( gpointer );
 
 
 #define MAX_LINE 400

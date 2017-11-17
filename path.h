@@ -30,6 +30,7 @@ size_t get_path_max_size( void );
 glob_t* Glob( const char *restrict );
 GSList* Scandir( char *dirname );
 void dump_slist( GSList* );
-void dum_string( char * );
+void dump_string( char * );
+void dump_hash( gpointer, gpointer, gpointer );
 
 #endif

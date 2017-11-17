@@ -2,6 +2,21 @@
 <!-- Generated with glade 3.18.3 -->
 <interface>
   <requires lib="gtk+" version="3.12"/>
+  <object class="GtkAdjustment" id="adjustment_major">
+    <property name="upper">100</property>
+    <property name="step_increment">1</property>
+    <property name="page_increment">1</property>
+  </object>
+  <object class="GtkAdjustment" id="adjustment_minor">
+    <property name="upper">100</property>
+    <property name="step_increment">1</property>
+    <property name="page_increment">1</property>
+  </object>
+  <object class="GtkAdjustment" id="adjustment_patch">
+    <property name="upper">500</property>
+    <property name="step_increment">1</property>
+    <property name="page_increment">10</property>
+  </object>
   <object class="GtkTextBuffer" id="buffer_exclude_file"/>
   <object class="GtkTextBuffer" id="buffer_exclude_folder"/>
   <object class="GtkTextBuffer" id="buffer_exclude_regex"/>
@@ -74,7 +89,6 @@
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
                     <property name="has_entry">True</property>
-                    <signal name="changed" handler="fill_in_config" swapped="no"/>
                     <child internal-child="entry">
                       <object class="GtkEntry" id="comboboxtext-entry">
                         <property name="can_focus">False</property>
@@ -257,6 +271,15 @@
                   <object class="GtkSpinButton" id="input_major">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="activates_default">True</property>
+                    <property name="truncate_multiline">True</property>
+                    <property name="shadow_type">etched-in</property>
+                    <property name="caps_lock_warning">False</property>
+                    <property name="progress_pulse_step">0</property>
+                    <property name="input_purpose">digits</property>
+                    <property name="populate_all">True</property>
+                    <property name="adjustment">adjustment_major</property>
+                    <property name="numeric">True</property>
                   </object>
                   <packing>
                     <property name="left_attach">1</property>
@@ -267,6 +290,8 @@
                   <object class="GtkSpinButton" id="input_minor">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="input_purpose">digits</property>
+                    <property name="adjustment">adjustment_minor</property>
                   </object>
                   <packing>
                     <property name="left_attach">1</property>
@@ -277,6 +302,7 @@
                   <object class="GtkSpinButton" id="input_patch">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="adjustment">adjustment_patch</property>
                   </object>
                   <packing>
                     <property name="left_attach">1</property>

@@ -44,7 +44,8 @@ struct llist
 			*admin_t,
 			*catalog_t,
 			*common_t;
-GData **config = NULL;
+GHashTable *config = NULL;
+GSList *filter_names = NULL;
 
 struct winsize win_size;
 
@@ -57,6 +58,9 @@ static struct tms st_cpu;
 static struct tms en_cpu;
 
 GtkEntry *input_code;
+GtkSpinButton *input_major;
+GtkSpinButton *input_minor;
+GtkSpinButton *input_patch;
 // GtkTextView *input_include_file;
 // GtkTextView *input_exclude_file;
 // GtkTextView *input_include_folder;
@@ -108,6 +112,11 @@ int main( int argc, char **argv ) {
     // Module code input
     input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
 
+    // Version numbers
+    input_major = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_major" ) );
+    input_minor = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_minor" ) );
+    input_patch = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_patch" ) );
+
     // Filter inputs
     buffer_include_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
     buffer_exclude_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_file" ) );
@@ -121,8 +130,10 @@ int main( int argc, char **argv ) {
 
     // Select configuration file action
     g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
-
+  
     gtk_widget_show (window);
+
+    init_filter_names();
 
     // Populate select package combobox with data
     get_package_configs( select_package );
@@ -3214,16 +3225,19 @@ int set_config_name() {
 	return 0;
 }
 
-int parse_config( char *config_name ) {
-	char name[ path_max_size ];
-	char *keyword;
+/**
+ * Parses configuration file and fills in configuration container
+ */
+int parse_config( gchar *config_name ) {
+	gchar name[ path_max_size ];
+	gchar *keyword;
 
 	g_return_val_if_fail( NULL != config, 1 );
 
 	xmlDocPtr doc;
 	xmlNodePtr cur, prev, root;
 
-	if ( DEBUG )printf("Opening configuration file %s\n", config_name );
+	if ( DEBUG )printf( "Opening configuration file %s\n", config_name );
 
 	doc = xmlParseFile( config_name );
 
@@ -3275,16 +3289,20 @@ int parse_config( char *config_name ) {
 			xml_to_config( "exclude_regex", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"code" ) ) {
-			g_datalist_set_data( config, "code", xmlNodeGetContent( cur ) );
+			if ( DEBUG )printf( "Fill in 'code' list\n" );
+			xml_to_config( "code", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"major" ) ) {
-			g_datalist_set_data( config, "major", xmlNodeGetContent( cur ) );
+			if ( DEBUG )printf( "Fill in 'major' list\n" );
+			xml_to_config( "major", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"minor" ) ) {
-			g_datalist_set_data( config, "minor", xmlNodeGetContent( cur ) );
+			if ( DEBUG )printf( "Fill in 'minor' list\n" );
+			xml_to_config( "minor", cur );
 
 		} else if ( ! xmlStrcmp( cur->name, ( const xmlChar * )"patch" ) ) {
-			g_datalist_set_data( config, "patch", xmlNodeGetContent( cur ) );
+			if ( DEBUG )printf( "Fill in 'patch' list\n" );
+			xml_to_config( "patch", cur );
 		}
 		 
 		cur = cur->next;
@@ -3298,52 +3316,30 @@ int parse_config( char *config_name ) {
 }
 
 int xml_to_config( char *name, xmlNodePtr root ) {
-	int debug = 0;
+	guint debug = 0;
 	GSList *config_item = NULL;
-	GSList *old_pointer = NULL;
-	char *value;
-	char *temp = g_malloc( MAX_LINE );
+	GSList *copy_pointer = NULL;
+	gchar *value;
 	
-	config_item = g_datalist_get_data( config, name );
-	old_pointer = config_item;
+	g_return_val_if_fail( g_hash_table_contains( config, name ), 1 );
 	xmlNodePtr cur = root->xmlChildrenNode;
 
-	g_return_val_if_fail( NULL != config_item, 1 );
-
 	while ( cur != NULL ) {
-		// if ( DEBUG || debug ) fprintf( stderr, "Item name '%s'\n", cur->name );
-
-		if ( !xmlStrcmp( cur->name, ( const xmlChar * )"item" ) ) {
-			memset( temp, 0, MAX_LINE );
-			temp = strncpy( temp, xmlNodeGetContent( cur ), MAX_LINE );
-			value = g_malloc( strlen( temp ) + 1 );
-			value = strncpy( value, temp, strlen( temp ) + 1 );
+		if ( strlen( g_strstrip( g_strdup( xmlNodeGetContent( cur ) ) ) ) ) {
+			value = g_strdup( xmlNodeGetContent( cur ) );
 
 			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", value );
 
-			if ( config_item->data == NULL ) {
-				config_item->data = value;
-				if ( DEBUG )printf( "Populating first list item\n" );
-
-			} else {
-				config_item = g_slist_prepend( config_item, value );
-				if ( DEBUG )printf( "Prepending to the list. New pointer: %p\n", config_item );
-			}
+			copy_pointer = g_slist_append( copy_pointer, value );
 		}
 
 		cur = cur->next;
 	};
 
-	if ( old_pointer != config_item ) {
-		
-		// Save anew since pointer is different now
-		g_datalist_id_remove_no_notify( config, g_quark_from_string( name ) );
-		g_datalist_id_set_data_full( config, g_quark_from_string( name ), config_item, &destroy_list );
+	if ( DEBUG )printf( "Re-saving configuration '%s'\n", name );
 
-		if ( DEBUG )printf( "Re-saving configuration '%s'\n", name );
-	}
-
-	g_free( temp );
+	// List's pointer has been changed - we need to re-save the data
+	g_hash_table_insert( config, g_strdup( name ), copy_pointer );
 
 	return 0;
 }
@@ -3354,35 +3350,41 @@ int xml_to_config( char *name, xmlNodePtr root ) {
  */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	GSList
-		*include_folder = g_slist_alloc(),
-		*exclude_folder = g_slist_alloc(),
-		*include_file = g_slist_alloc(),
-		*exclude_file = g_slist_alloc(),
-		*include_regex = g_slist_alloc(),
-		*exclude_regex = g_slist_alloc();
+		*include_folder = NULL,
+		*exclude_folder = NULL,
+		*include_file   = NULL,
+		*exclude_file   = NULL,
+		*include_regex  = NULL,
+		*exclude_regex  = NULL,
+		*code = NULL,
+		*major = NULL,
+		*minor = NULL,
+		*patch = NULL;
 
 	if ( DEBUG )printf( "Fetching config data\n" );
 
 	// Free previous data
 	if ( NULL != config ) {
 		if ( DEBUG )printf( "Clearing previous data\n" );
-		g_datalist_clear( config );
-		g_datalist_init( config );
+		g_hash_table_destroy( config );
 
 	} else {
 		printf( "Nothing to free\n" );
 	}
 
-	config = (GData**)g_malloc0( sizeof( GData* ) );
-
 	char *name = g_malloc0( path_max_size );
+	config = g_hash_table_new_full( g_str_hash, g_str_equal, (GDestroyNotify)config_key_clean, (GDestroyNotify)config_value_clean );
 
-	g_datalist_id_set_data_full( config, g_quark_from_string( "include_folder" ), include_folder, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_folder" ), exclude_folder, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "include_file" ), include_file, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_file" ), exclude_file, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "include_regex" ), include_regex, &destroy_list );
-	g_datalist_id_set_data_full( config, g_quark_from_string( "exclude_regex" ), exclude_regex, &destroy_list );
+	g_hash_table_insert( config, g_strdup( "include_folder" ), include_folder );
+	g_hash_table_insert( config, g_strdup( "exclude_folder" ), exclude_folder );
+	g_hash_table_insert( config, g_strdup( "include_file" ),   include_file );
+	g_hash_table_insert( config, g_strdup( "exclude_file" ),   exclude_file );
+	g_hash_table_insert( config, g_strdup( "include_regex" ),  include_regex );
+	g_hash_table_insert( config, g_strdup( "exclude_regex" ),  exclude_regex );
+	g_hash_table_insert( config, g_strdup( "code" ), code );
+	g_hash_table_insert( config, g_strdup( "major" ), major );
+	g_hash_table_insert( config, g_strdup( "minor" ), minor );
+	g_hash_table_insert( config, g_strdup( "patch" ), patch );
 
 	// Get file name from combobox
 	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
@@ -3395,44 +3397,53 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 
 	// Update configuration tab
 	update_config_view();
+
+	if ( DEBUG )printf( "Fill in config end\n" );
 }
 
 /**
- * Callback to free list occupied 
+ * Cleans up hash table key
  */
-void destroy_list( gpointer list ) {
-	if ( DEBUG )printf("Freeing memory consumed by GSList\n" );
+void config_key_clean( gpointer key ) {
+	if ( DEBUG )printf( "Request to destroy hash key '%s'\n", (char*)key );
+	g_free( key );
+}
 
-	GSList *next;
-	GSList *item;
+/**
+ * Cleans up hash table value
+ */
+void config_value_clean( gpointer value ) {
+	if ( DEBUG )printf( "Request to destroy hash value [%p]\n", value );
+	g_slist_free_full ( value, (GDestroyNotify)g_free );
 
-	g_return_if_fail( NULL != list );
-
-	item = list;
-
-	while( item ) {
-		next = item->next;
-		g_free( item->data );
-		item = next;
-	}
-	// g_list_free( list );
 }
 
 /**
  * Fills in view with configuration date
  */
 void update_config_view() {
-	GSList *include_file;
-	GSList *exclude_file;
-	GSList *include_folder;
-	GSList *exclude_folder;
-	GSList *include_regex;
-	GSList *exclude_regex;
-
 	if ( DEBUG )printf( "Updating configuration view...\n" );
 
+	GSList
+		*include_folder = g_hash_table_lookup( config, "include_folder" ),
+		*exclude_folder = g_hash_table_lookup( config, "exclude_folder" ),
+		*include_file   = g_hash_table_lookup( config, "include_file" ),
+		*exclude_file   = g_hash_table_lookup( config, "exclude_file" ),
+		*include_regex  = g_hash_table_lookup( config, "include_regex" ),
+		*exclude_regex  = g_hash_table_lookup( config, "exclude_regex" ),
+		*code           = g_hash_table_lookup( config, "code" ),
+		*major          = g_hash_table_lookup( config, "major" ),
+		*minor          = g_hash_table_lookup( config, "minor" ),
+		*patch          = g_hash_table_lookup( config, "patch" );
+
+	gchar *code_name;
+
+	// Check view controls
 	g_return_if_fail( NULL != config );
 	g_return_if_fail( NULL != input_code );
+	g_return_if_fail( NULL != input_major );
+	g_return_if_fail( NULL != input_minor );
+	g_return_if_fail( NULL != input_patch );
 	g_return_if_fail( NULL != buffer_include_file );
 	g_return_if_fail( NULL != buffer_exclude_file );
 	g_return_if_fail( NULL != buffer_include_folder );
@@ -3440,59 +3451,97 @@ void update_config_view() {
 	g_return_if_fail( NULL != buffer_include_regex );
 	g_return_if_fail( NULL != buffer_exclude_regex );
 
+	// Check configurations
+	g_return_if_fail( g_hash_table_contains( config, "include_file" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_file" ) );
+	g_return_if_fail( g_hash_table_contains( config, "include_folder" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_folder" ) );
+	g_return_if_fail( g_hash_table_contains( config, "include_regex" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_regex" ) );
+	g_return_if_fail( g_hash_table_contains( config, "code" ) );
+	g_return_if_fail( g_hash_table_contains( config, "major" ) );
+	g_return_if_fail( g_hash_table_contains( config, "minor" ) );
+	g_return_if_fail( g_hash_table_contains( config, "patch" ) );
+
 	clear_config_buffers();
 
+	if ( DEBUG )printf("Buffers cleared\n");
+
 	// Package code
-	gtk_entry_set_text( input_code,  g_datalist_get_data( config, "code" ) );
-	if ( DEBUG )printf( "Set package code\n" );
+	if ( NULL != code ) {
+		if ( DEBUG )printf( "Set package code: %s\n", code_name );
+		code_name = code->data ?: "";
+		gtk_entry_set_text( input_code, code_name );
+	}
+
+
+	// Package major number
+	if ( NULL != major ) {
+		if ( DEBUG )printf( "Set package major version number: %f\n", (double)atoi( (char*)major->data ) );
+		gtk_spin_button_set_value( input_major, (double)atoi( (char*)major->data ) );
+	}
+
+	// Package minor number
+	if ( NULL != minor ) {
+		if ( DEBUG )printf( "Set package minor version number: %f\n", (double)atoi( (char*)minor->data ) );
+		// gtk_spin_button_set_value( input_minor, *(double*)minor->data );
+		gtk_spin_button_set_value( input_minor, (double)atoi( (char*)minor->data ) );
+	}
+
+	// Package patch number
+	if ( NULL != patch ) {
+		if ( DEBUG )printf( "Set package patch version number: %f\n", (double)atoi( (char*)patch->data ) );
+		gtk_spin_button_set_value( input_patch, (double)atoi( (char*)patch->data ) );
+	}
 
 	// Included files
-	include_file = g_datalist_get_data( config, "include_file" );
-	g_return_if_fail( NULL != include_file );
-
-	dump_slist( include_file );
+	if ( DEBUG ) {
+		printf( "Set included files\n" );
+		dump_slist( include_file );
+	}
 
 	g_slist_foreach( include_file, &fill_in_input_buffer, buffer_include_file );
 
 	// Excluded files
-	exclude_file = g_datalist_get_data( config, "exclude_file" );
-	g_return_if_fail( NULL != exclude_file );
-
-	dump_slist( exclude_file );
+	if ( DEBUG ) {
+		printf( "Set excluded files\n" );
+		dump_slist( exclude_file );
+	}
 
 	g_slist_foreach( exclude_file, &fill_in_input_buffer, buffer_exclude_file );
 
 	// Included folders
-	include_folder = g_datalist_get_data( config, "include_folder" );
-	g_return_if_fail( NULL != include_folder );
-
-	dump_slist( include_folder );
+	if ( DEBUG ) {
+		printf( "Set included folders\n" );
+		dump_slist( include_folder );
+	}
 
 	g_slist_foreach( include_folder, &fill_in_input_buffer, buffer_include_folder );
 
 	// Excluded folders
-	exclude_folder = g_datalist_get_data( config, "exclude_folder" );
-	g_return_if_fail( NULL != exclude_folder );
-
-	dump_slist( exclude_folder );
+	if ( DEBUG ) {
+		printf( "Set excluded folders\n" );
+		dump_slist( exclude_folder );
+	}
 
 	g_slist_foreach( exclude_folder, &fill_in_input_buffer, buffer_exclude_folder );
 
 	// Included regex
-	include_regex = g_datalist_get_data( config, "include_regex" );
-	g_return_if_fail( NULL != include_regex );
-
-	dump_slist( include_regex );
+	if ( DEBUG ) {
+		printf( "Set included regex\n" );
+		dump_slist( include_regex );
+	}
 
 	g_slist_foreach( include_regex, &fill_in_input_buffer, buffer_include_regex );
 
-	// Excluded regex
-	exclude_regex = g_datalist_get_data( config, "exclude_regex" );
-	g_return_if_fail( NULL != exclude_regex );
-
-	dump_slist( exclude_regex );
+	if ( DEBUG ) {
+		printf( "Set excluded regex\n" );
+		dump_slist( exclude_regex );
+	}
 
 	g_slist_foreach( exclude_regex, &fill_in_input_buffer, buffer_exclude_regex );
+
+	if ( DEBUG )printf( "View has been updated\n" ); 
 }
 
 /**
@@ -3530,7 +3579,12 @@ void fill_in_input_buffer( void *text, void *buffer ) {
 	g_free( end );
 }
 
+/**
+ * Clears configuration view buffers' content
+ */
 void clear_config_buffers() {
+	if ( DEBUG ) printf( "Clearing config view buffers...\n" );
+
 	GtkTextBuffer *list[] = {
 		buffer_include_file,
 		buffer_exclude_file,
@@ -3549,7 +3603,6 @@ void clear_config_buffers() {
 	end = g_malloc0( sizeof( GtkTextIter ) );
 
 	while ( list[ i ] != NULL ) {
-printf( "Clearing buffer: %p\n", list[ i ] );
 		gtk_text_buffer_get_bounds( list[ i ], start, end );
 		gtk_text_buffer_delete ( list[ i ], start, end );
 		i++;
@@ -3557,13 +3610,18 @@ printf( "Clearing buffer: %p\n", list[ i ] );
 
 	g_free( start );
 	g_free( end );
+}
 
-	// gtk_text_buffer_set_text( buffer_include_file, "", 1 );
-	// gtk_text_buffer_set_text( buffer_exclude_file, "", 1 );
-	// gtk_text_buffer_set_text( buffer_include_folder, "", 1 );
-	// gtk_text_buffer_set_text( buffer_exclude_folder, "", 1 );
-	// gtk_text_buffer_set_text( buffer_include_regex, "", 1 );
-	// gtk_text_buffer_set_text( buffer_exclude_regex, "", 1  );
+/**
+ * Fills in list of filters name for further use
+ */
+void init_filter_names() {
+	filter_names = g_slist_append( NULL, g_strdup( "include_file" ) );
+	filter_names = g_slist_append( filter_names, g_strdup( "exclude_file" ) );
+	filter_names = g_slist_append( filter_names, g_strdup( "include_folder" ) );
+	filter_names = g_slist_append( filter_names, g_strdup( "exclude_folder" ) );
+	filter_names = g_slist_append( filter_names, g_strdup( "include_regex" ) );
+	filter_names = g_slist_append( filter_names, g_strdup( "exclude_regex" ) );
 }
 
 
