@@ -33,12 +33,6 @@ size_t path_max_size;
 
 struct llist
 			*files,
-			// *include_dir,
-			// *exclude_dir,
-			// *include_file,
-			// *exclude_file,
-			// *include_regexp,
-			// *exclude_regexp,
 			*temp,
 			*filters,
 			*admin_t,
@@ -57,16 +51,18 @@ static long clockticks = 0;
 static struct tms st_cpu;
 static struct tms en_cpu;
 
+// Select package config input
+GtkComboBoxText *select_package;
+
+// Package code input
 GtkEntry *input_code;
+
+// Package version number inputs
 GtkSpinButton *input_major;
 GtkSpinButton *input_minor;
 GtkSpinButton *input_patch;
-// GtkTextView *input_include_file;
-// GtkTextView *input_exclude_file;
-// GtkTextView *input_include_folder;
-// GtkTextView *input_exclude_folder;
-// GtkTextView *input_include_regex;
-// GtkTextView *input_exclude_regex;
+
+// Package file inputs
 GtkTextBuffer *buffer_include_file;
 GtkTextBuffer *buffer_exclude_file;
 GtkTextBuffer *buffer_include_folder;
@@ -74,11 +70,18 @@ GtkTextBuffer *buffer_exclude_folder;
 GtkTextBuffer *buffer_include_regex;
 GtkTextBuffer *buffer_exclude_regex;
 
+// Config manage buttons
+GtkButton *button_reload_config;
+GtkButton *button_save_config;
+GtkButton *button_delete_config;
+
+// Select package event handler ID
+gulong select_package_handler = 0;
+
 int main( int argc, char **argv ) {
 	GtkBuilder *UI_builder;
 	GSList *lp, *lst;
 	GtkWidget *window;
-	GtkComboBoxText *select_package;
 
 	char *path;
 	char *dir;
@@ -88,7 +91,7 @@ int main( int argc, char **argv ) {
 	path_max_size = get_path_max_size();
 
 	// Remember CWD where extension was launched
-	cwd = (char*)g_malloc( path_max_size );
+	cwd = g_get_current_dir();
 
 	file = (char*)g_malloc( path_max_size );
 	dir = g_path_get_dirname( __FILE__ );
@@ -125,21 +128,35 @@ int main( int argc, char **argv ) {
     buffer_include_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_regex" ) );
     buffer_exclude_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_regex" ) );
 
+    // Configuration buttons
+    button_reload_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_reload_config" ) );
+    button_save_config   = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_save_config" ) );
+    button_delete_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_config" ) );
+
     // Close the program
     g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
 
     // Select configuration file action
-    g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
+    select_package_handler = g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
+
+    // Reload configuration files click handler
+    g_signal_connect ( button_reload_config, "clicked", G_CALLBACK ( reload_config ), NULL);
+
+    // Save configuration files click handler
+    g_signal_connect ( button_save_config, "clicked", G_CALLBACK ( save_config ), NULL);
+
+    // Delete configuration files click handler
+    g_signal_connect ( button_delete_config, "clicked", G_CALLBACK ( delete_config ), NULL);
   
     gtk_widget_show (window);
 
-    init_filter_names();
+    // init_filter_names();
 
     // Populate select package combobox with data
-    get_package_configs( select_package );
+    get_package_configs();
     gtk_main ();
 
-	return 1;
+	return 0;
 	// int debug = 0;
 
 	// char line[ MAX_LINE ];
@@ -448,7 +465,7 @@ int main( int argc, char **argv ) {
 }
 
 /**
- * Exits main loop
+ * Exits main loop and terminates the program
  */
 void destroy( GtkWidget *widget, gpointer data ) {
     gtk_main_quit ();
@@ -457,11 +474,13 @@ void destroy( GtkWidget *widget, gpointer data ) {
 /**
  * Fills in dropdown with package configuration files
  */
-int get_package_configs( GtkComboBoxText* select_package ) {
+int get_package_configs() {
 	struct dirent **list;
 	int n;
 
 	if ( DEBUG ) printf( "Searching for package configs...\n" );
+
+	gtk_combo_box_text_remove_all ( select_package );
 
 	n = scandir( ".", &list, &filter_package_config_name, alphasort );
 
@@ -643,7 +662,7 @@ int on_iterate_error( char *name ) {
  * CHDIR to CWD
  *
  */
-int save_config() {
+// int save_config() {
 	// xmlDocPtr doc;
 	// xmlNodePtr root, child;
 
@@ -696,29 +715,29 @@ int save_config() {
 	// xmlFreeNode( child );
 	// xmlFreeDoc( doc );
 
-	return 0;
-}
+// 	return 0;
+// }
 
-xmlNodePtr config_to_xml( char *name, struct llist *l ) {
+/**
+ * Adds list items to XML structure
+ */
+xmlNodePtr config_to_xml( char *name, GSList *l ) {
 	int debug = 0;
+	GSList *list = l;
 
 	xmlNodePtr cur, parent;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Processing list %s\n", name );
-	if ( DEBUG || debug ) l->print( l );
+	if ( DEBUG || debug ) dump_slist( list );
 
 	parent = xmlNewNode( NULL, name );
 
-	if ( NULL == l->first ) return NULL;
-
-	l->current = l->first;
-
-	while ( NULL != l->current ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Adding %s\n", (char*)l->current->value );
+	while ( NULL != list ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Adding %s\n", (char*)list->data );
 		cur = xmlNewNode( NULL, "item" );
-		xmlNodeAddContent( cur, (xmlChar*)l->current->value );
+		xmlNodeAddContent( cur, (xmlChar*)list->data );
 		xmlAddChild( parent, cur );
-		l->current = l->current->next;
+		list = list->next;
 	}
 
 	return parent;
@@ -1055,7 +1074,7 @@ Sigfunc *signal( int signo, Sigfunc *func ) {
 void int_handler( int s ) {
 	if ( s == SIGINT ) {
 		printf( "\nInterrupted\n" );
-		save_config();
+		// save_config();
 		exit( 2 );
 	}
 }
@@ -3349,6 +3368,8 @@ int xml_to_config( char *name, xmlNodePtr root ) {
  * Change combobox event handler
  */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
+	if ( DEBUG )printf( ">>>>>> PACKAGE SELECTED <<<<<<\n" );
+
 	GSList
 		*include_folder = NULL,
 		*exclude_folder = NULL,
@@ -3469,8 +3490,8 @@ void update_config_view() {
 
 	// Package code
 	if ( NULL != code ) {
-		if ( DEBUG )printf( "Set package code: %s\n", code_name );
 		code_name = code->data ?: "";
+		if ( DEBUG )printf( "Set package code: %s\n", code_name );
 		gtk_entry_set_text( input_code, code_name );
 	}
 
@@ -3615,13 +3636,199 @@ void clear_config_buffers() {
 /**
  * Fills in list of filters name for further use
  */
-void init_filter_names() {
-	filter_names = g_slist_append( NULL, g_strdup( "include_file" ) );
-	filter_names = g_slist_append( filter_names, g_strdup( "exclude_file" ) );
-	filter_names = g_slist_append( filter_names, g_strdup( "include_folder" ) );
-	filter_names = g_slist_append( filter_names, g_strdup( "exclude_folder" ) );
-	filter_names = g_slist_append( filter_names, g_strdup( "include_regex" ) );
-	filter_names = g_slist_append( filter_names, g_strdup( "exclude_regex" ) );
+// void init_filter_names() {
+// 	filter_names = g_slist_append( NULL, g_strdup( "include_file" ) );
+// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_file" ) );
+// 	filter_names = g_slist_append( filter_names, g_strdup( "include_folder" ) );
+// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_folder" ) );
+// 	filter_names = g_slist_append( filter_names, g_strdup( "include_regex" ) );
+// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_regex" ) );
+// }
+
+/** 
+ * Reloads lost of configuration files from the disk
+ */
+void reload_config( GtkButton *button, gpointer data ) {
+	if ( DEBUG )printf( ">>>>>>> RELOAD CONFIGS <<<<<<<\n" );
+	g_signal_handler_block( select_package, select_package_handler );
+	get_package_configs();
+	g_signal_handler_unblock( select_package, select_package_handler );
+}
+
+/** 
+ * Saves configuration file on disk
+ */
+void save_config( GtkButton *button, gpointer data ) {
+	if ( DEBUG )printf( ">>>>>>> SAVE CONFIG <<<<<<<\n" );
+	xmlDocPtr doc;
+	xmlNodePtr root, child;
+	char *package_name;
+
+	update_config();
+
+	GSList
+		*include_folder = g_hash_table_lookup( config, "include_folder" ),
+		*exclude_folder = g_hash_table_lookup( config, "exclude_folder" ),
+		*include_file   = g_hash_table_lookup( config, "include_file" ),
+		*exclude_file   = g_hash_table_lookup( config, "exclude_file" ),
+		*include_regex  = g_hash_table_lookup( config, "include_regex" ),
+		*exclude_regex  = g_hash_table_lookup( config, "exclude_regex" ),
+		*code           = g_hash_table_lookup( config, "code" ),
+		*major          = g_hash_table_lookup( config, "major" ),
+		*minor          = g_hash_table_lookup( config, "minor" ),
+		*patch          = g_hash_table_lookup( config, "patch" );
+
+	// Check configurations
+	g_return_if_fail( g_hash_table_contains( config, "include_file" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_file" ) );
+	g_return_if_fail( g_hash_table_contains( config, "include_folder" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_folder" ) );
+	g_return_if_fail( g_hash_table_contains( config, "include_regex" ) );
+	g_return_if_fail( g_hash_table_contains( config, "exclude_regex" ) );
+	g_return_if_fail( g_hash_table_contains( config, "code" ) );
+	g_return_if_fail( g_hash_table_contains( config, "major" ) );
+	g_return_if_fail( g_hash_table_contains( config, "minor" ) );
+	g_return_if_fail( g_hash_table_contains( config, "patch" ) );
+
+	doc = xmlNewDoc( "1.0" );
+	root = xmlNewNode( NULL, "config" );
+	xmlDocSetRootElement( doc, root );
+
+	xmlAddChild( root, config_to_xml( "include_file", include_file ) );
+	xmlAddChild( root, config_to_xml( "exclude_file", exclude_file ) );
+	xmlAddChild( root, config_to_xml( "include_folder", include_folder ) );
+	xmlAddChild( root, config_to_xml( "exclude_folder", exclude_folder ) );
+	xmlAddChild( root, config_to_xml( "include_regex", include_regex ) );
+	xmlAddChild( root, config_to_xml( "exclude_regex", exclude_regex ) );
+
+	child = xmlNewNode( NULL, "code" );
+	xmlNodeAddContent( child, code->data );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "major" );
+	xmlNodeAddContent( child, major->data );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "minor" );
+	xmlNodeAddContent( child, minor->data );
+	xmlAddChild( root, child );
+
+	child = xmlNewNode( NULL, "patch" );
+	xmlNodeAddContent( child, patch->data );
+	xmlAddChild( root, child );
+
+	package_name = g_build_filename( cwd, code->data, NULL );
+	package_name = g_realloc( package_name, strlen( package_name ) + 9 ); // + .package suffix
+	g_strlcat( package_name, ".package", strlen( package_name ) + 9 );
+
+	if ( DEBUG )printf( "Saving configuration into file %s\n", package_name );
+
+	if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
+		fprintf( stderr, "Configuration file was updated\n" );
+
+	} else {
+		fprintf( stderr, "Failed to update configuration file\n" );
+	}
+
+	// xmlFreeNode( child );
+	xmlFreeDoc( doc );
+	g_free( package_name );
+}
+
+/**
+ * Deletes configuration file from the disk
+ */
+void delete_config( GtkButton *button, gpointer data ) {
+	if ( DEBUG )printf( ">>>>>>>> DELETE CONFIG <<<<<<<<\n");
+}
+
+void update_config_from_view() {
+	if ( DEBUG )printf("Updating configuration from the view\n" );
+
+	GSList
+		*new_code           = NULL,
+		*new_major          = NULL,
+		*new_minir          = NULL,
+		*new_patch          = NULL,
+		*new_include_file   = NULL,
+		*new_exclude_file   = NULL,
+		*new_include_folder = NULL,
+		*new_exclude_folder = NULL,
+		*new_include_regex  = NULL,
+		*new_exclude_regex  = NULL;
+
+	// Check view controls
+	g_return_if_fail( NULL != config );
+	g_return_if_fail( NULL != input_code );
+	g_return_if_fail( NULL != input_major );
+	g_return_if_fail( NULL != input_minor );
+	g_return_if_fail( NULL != input_patch );
+	g_return_if_fail( NULL != buffer_include_file );
+	g_return_if_fail( NULL != buffer_exclude_file );
+	g_return_if_fail( NULL != buffer_include_folder );
+	g_return_if_fail( NULL != buffer_exclude_folder );
+	g_return_if_fail( NULL != buffer_include_regex );
+	g_return_if_fail( NULL != buffer_exclude_regex );
+
+	// Update package code
+	new_code = g_slist_append( new_code, gtk_entry_get_text( input_code ) );
+	g_hash_table_insert( config, g_strdup( "code" ), new_code );
+
+	// Update package major number
+	new_major = g_slist_append( new_major, gtk_spin_button_get_value( input_major ) );
+	g_hash_table_insert( config, g_strdup( "major" ), new_major );
+
+	// Update package minor number
+	new_minor = g_slist_append( new_minor, gtk_spin_button_get_value( input_minor ) );
+	g_hash_table_insert( config, g_strdup( "minor" ), new_major );
+
+	// Update package patch number
+	new_patch = g_slist_append( new_patch, gtk_spin_button_get_value( input_patch ) );
+	g_hash_table_insert( config, g_strdup( "patch" ), new_patch );
+
+	// Update package included files
+	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+
+	// Update package excluded files
+	g_hash_table_insert( config, g_strdup( "exclude_file" ), text_buffer_to_slist( buffer_exclude_file, new_exclude_file ) );
+
+	// Update package included files
+	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+
+	// Update package included files
+	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+
+	// Update package included files
+	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+
+	// Update package included files
+	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+}
+
+GSList *text_buffer_to_slist( GtkTextBuffer* buffer, GSList *list ) {
+	GtkTextIter *start = NULL;
+	GtkTextIter *end = NULL;
+	gchar text;
+	gchar **parts;
+	gchar **p;
+
+	gtk_text_buffer_get_bounds( buffer, start, end );
+	text = gtk_text_buffer_get_text( buffer, start, end, FALSE );
+	parts = g_strsplit( text, "\n", -1 );
+
+	p = parts;
+
+	while( p != NULL ) {
+		list = g_slist_append( list, g_strdup( &p ) );
+		p++;
+	}
+
+	g_free( start );
+	g_free( end );
+	g_free( text );
+	g_strfreev( parts );
+
+	return list;
 }
 
 

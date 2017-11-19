@@ -37,7 +37,6 @@ typedef int It_error(  char* );
 int usage( void );
 int iterate(  char*, It_file*, It_dir*, It_error* );
 int parse_config( char* );
-int save_config( void );
 int add_to(  char* );
 int del_from(  char*, struct llist* );
 int start_add( struct llist* );
@@ -100,22 +99,26 @@ int make_vqmod();
 int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
 int set_config_name( void );
 int xml_to_config( char*, xmlNodePtr );
-xmlNodePtr config_to_xml( char*, struct llist* );
+xmlNodePtr config_to_xml( char*, GSList* );
 int php_lint();
 int php_lint_cb( char*, struct stat* );
 
 void destroy( GtkWidget *, gpointer );
 void show_error( char * );
-int get_package_configs( GtkComboBoxText* );
+int get_package_configs( void );
 int filter_package_config_name( const struct dirent* );
 void fill_in_config( GtkComboBox *widget, gpointer user_data );
 void update_config_view();
 void fill_in_input_buffer( void*, void* );
 void destroy_list( gpointer );
 void clear_config_buffers( void );
-void init_filter_names( void );
+// void init_filter_names( void );
 void config_value_clean( gpointer );
 void config_key_clean( gpointer );
+void reload_config( GtkButton *button, gpointer );
+void save_config( GtkButton *button, gpointer );
+void delete_config( GtkButton *button, gpointer );
+void update_config_from_view( void );
 
 
 #define MAX_LINE 400
