@@ -185,3 +185,29 @@ void dump_hash( gpointer key, gpointer value, gpointer data ) {
 
 	printf( "\n" );
 }
+
+/**
+ * Dumps NULL terminated string vector
+ */
+void dump_vector( char** vector ) {
+	char **p = vector;
+
+	g_print( "Vector dump:\n" );
+
+	while ( NULL != *p ) {
+		g_print( "%s\n", *p );
+		p++;
+	}
+}
+
+/**
+ * Prints colored output to stdout
+ */
+void print_color( const char *color, char *format, ... ) {
+	va_list args;
+	va_start( args, format );
+	printf( color );
+	vprintf( format, args );
+	printf( "\e[0m\n" );
+	va_end( args );
+}

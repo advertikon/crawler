@@ -79,6 +79,8 @@ GtkButton *button_delete_config;
 gulong select_package_handler = 0;
 
 int main( int argc, char **argv ) {
+	if ( DEBUG )print_color( B_RED, "Stat\n" );
+
 	GtkBuilder *UI_builder;
 	GSList *lp, *lst;
 	GtkWidget *window;
@@ -491,6 +493,9 @@ int get_package_configs() {
 
 	if ( DEBUG )printf("%i package files were found\n", n );
 
+	// Add empty filed
+	gtk_combo_box_text_append_text( select_package, "" );
+
 	while ( n-- ) {
 		if ( DEBUG )printf( "%s\n", list[ n ]->d_name );
 		gtk_combo_box_text_append_text( select_package, list[ n ]->d_name );
@@ -722,6 +727,8 @@ int on_iterate_error( char *name ) {
  * Adds list items to XML structure
  */
 xmlNodePtr config_to_xml( char *name, GSList *l ) {
+	if ( DEBUG )print_color( B_GREEN, "config_to_xml: %s\n", name );
+
 	int debug = 0;
 	GSList *list = l;
 
@@ -3248,6 +3255,13 @@ int set_config_name() {
  * Parses configuration file and fills in configuration container
  */
 int parse_config( gchar *config_name ) {
+	if ( DEBUG )g_print( "parse config: start\n");
+
+	if ( IS_EMPTY( config_name ) ) {
+		if ( DEBUG )printf("File name is empty. Skip\n" );
+		return 0;
+	}
+
 	gchar name[ path_max_size ];
 	gchar *keyword;
 
@@ -3334,7 +3348,12 @@ int parse_config( gchar *config_name ) {
 	return 0;
 }
 
+/**
+ * Puts values from XML to configuration structure
+ */
 int xml_to_config( char *name, xmlNodePtr root ) {
+	if ( DEBUG )print_color( B_GREEN, "xml_to_config: Start" );
+
 	guint debug = 0;
 	GSList *config_item = NULL;
 	GSList *copy_pointer = NULL;
@@ -3368,7 +3387,7 @@ int xml_to_config( char *name, xmlNodePtr root ) {
  * Change combobox event handler
  */
 void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
-	if ( DEBUG )printf( ">>>>>> PACKAGE SELECTED <<<<<<\n" );
+	if ( DEBUG )print_color( B_CYAN, ">>>>>> PACKAGE SELECTED (fill_in_config) <<<<<<\n" );
 
 	GSList
 		*include_folder = NULL,
@@ -3426,7 +3445,7 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
  * Cleans up hash table key
  */
 void config_key_clean( gpointer key ) {
-	if ( DEBUG )printf( "Request to destroy hash key '%s'\n", (char*)key );
+	if ( DEBUG )print_color( B_GREEN, "config_key_clean: Request to destroy hash key '%s'\n", (char*)key );
 	g_free( key );
 }
 
@@ -3434,7 +3453,7 @@ void config_key_clean( gpointer key ) {
  * Cleans up hash table value
  */
 void config_value_clean( gpointer value ) {
-	if ( DEBUG )printf( "Request to destroy hash value [%p]\n", value );
+	if ( DEBUG )print_color( B_GREEN, "config_value_clean: Request to destroy hash value [%p]\n", value );
 	g_slist_free_full ( value, (GDestroyNotify)g_free );
 
 }
@@ -3443,7 +3462,7 @@ void config_value_clean( gpointer value ) {
  * Fills in view with configuration date
  */
 void update_config_view() {
-	if ( DEBUG )printf( "Updating configuration view...\n" );
+	if ( DEBUG )print_color( B_GREEN, "update_config_view: Updating configuration view...\n" );
 
 	GSList
 		*include_folder = g_hash_table_lookup( config, "include_folder" ),
@@ -3505,7 +3524,6 @@ void update_config_view() {
 	// Package minor number
 	if ( NULL != minor ) {
 		if ( DEBUG )printf( "Set package minor version number: %f\n", (double)atoi( (char*)minor->data ) );
-		// gtk_spin_button_set_value( input_minor, *(double*)minor->data );
 		gtk_spin_button_set_value( input_minor, (double)atoi( (char*)minor->data ) );
 	}
 
@@ -3569,6 +3587,8 @@ void update_config_view() {
  * Fill ins text buffer with specific text
  */
 void fill_in_input_buffer( void *text, void *buffer ) {
+	if ( DEBUG )print_color( B_GREEN, "fill_in_input_buffer: Stat\n" );
+
 	g_return_if_fail( buffer != NULL );
 	GtkTextIter *start;
 	GtkTextIter *end;
@@ -3604,7 +3624,7 @@ void fill_in_input_buffer( void *text, void *buffer ) {
  * Clears configuration view buffers' content
  */
 void clear_config_buffers() {
-	if ( DEBUG ) printf( "Clearing config view buffers...\n" );
+	if ( DEBUG ) print_color( B_GREEN, "clear_config_buffers: Clearing config view buffers...\n" );
 
 	GtkTextBuffer *list[] = {
 		buffer_include_file,
@@ -3649,7 +3669,7 @@ void clear_config_buffers() {
  * Reloads lost of configuration files from the disk
  */
 void reload_config( GtkButton *button, gpointer data ) {
-	if ( DEBUG )printf( ">>>>>>> RELOAD CONFIGS <<<<<<<\n" );
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>> RELOAD CONFIGS (reload_config)<<<<<<<\n" );
 	g_signal_handler_block( select_package, select_package_handler );
 	get_package_configs();
 	g_signal_handler_unblock( select_package, select_package_handler );
@@ -3659,12 +3679,14 @@ void reload_config( GtkButton *button, gpointer data ) {
  * Saves configuration file on disk
  */
 void save_config( GtkButton *button, gpointer data ) {
-	if ( DEBUG )printf( ">>>>>>> SAVE CONFIG <<<<<<<\n" );
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>> SAVE CONFIG (save_config)<<<<<<<\n" );
 	xmlDocPtr doc;
 	xmlNodePtr root, child;
 	char *package_name;
+	int written;
+	char *file_name;
 
-	update_config();
+	update_config_from_view();
 
 	GSList
 		*include_folder = g_hash_table_lookup( config, "include_folder" ),
@@ -3717,38 +3739,71 @@ void save_config( GtkButton *button, gpointer data ) {
 	xmlNodeAddContent( child, patch->data );
 	xmlAddChild( root, child );
 
-	package_name = g_build_filename( cwd, code->data, NULL );
-	package_name = g_realloc( package_name, strlen( package_name ) + 9 ); // + .package suffix
-	g_strlcat( package_name, ".package", strlen( package_name ) + 9 );
+	file_name = get_package_name();
+
+	if ( NULL == file_name ) {
+		fprintf(stderr, "Failed to construct package name\n" );
+		return;
+	}
+
+	package_name = g_build_filename( cwd, file_name, NULL );
 
 	if ( DEBUG )printf( "Saving configuration into file %s\n", package_name );
 
-	if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
-		fprintf( stderr, "Configuration file was updated\n" );
+	if ( ( written = xmlSaveFormatFile( package_name, doc, 1 ) ) != -1 ) {
+		fprintf( stderr, "Configuration file '%s' was updated (%i bytes were written)\n", package_name, written );
 
 	} else {
 		fprintf( stderr, "Failed to update configuration file\n" );
 	}
 
-	// xmlFreeNode( child );
+	if ( DEBUG )xmlDocDump( stdout, doc );
+
 	xmlFreeDoc( doc );
 	g_free( package_name );
+	g_free( file_name );
+}
+
+/*
+ * Returns package name
+ */
+char *get_package_name() {
+	g_return_val_if_fail( NULL != input_code, NULL );
+	g_return_val_if_fail( NULL != select_package, NULL );
+
+	char *name;
+
+	name = gtk_combo_box_text_get_active_text( select_package );
+
+	if ( IS_EMPTY( name ) ) {
+		name = g_strdup( gtk_entry_get_text( input_code ) );
+
+		if ( IS_EMPTY( name ) ) {
+			if( DEBUG )g_print( "Package name is empty\n" );
+			return NULL;
+		}
+
+		name = g_realloc( name, strlen( name ) + 9 ); // + .package suffix
+		g_strlcat( name, ".package", strlen( name ) + 9 );
+	}
+
+	return name;
 }
 
 /**
  * Deletes configuration file from the disk
  */
 void delete_config( GtkButton *button, gpointer data ) {
-	if ( DEBUG )printf( ">>>>>>>> DELETE CONFIG <<<<<<<<\n");
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> DELETE CONFIG <<<<<<<<\n");
 }
 
 void update_config_from_view() {
-	if ( DEBUG )printf("Updating configuration from the view\n" );
+	if ( DEBUG )print_color( B_GREEN, "update_config_from_view: Updating configuration from the view\n" );
 
 	GSList
 		*new_code           = NULL,
 		*new_major          = NULL,
-		*new_minir          = NULL,
+		*new_minor          = NULL,
 		*new_patch          = NULL,
 		*new_include_file   = NULL,
 		*new_exclude_file   = NULL,
@@ -3771,19 +3826,19 @@ void update_config_from_view() {
 	g_return_if_fail( NULL != buffer_exclude_regex );
 
 	// Update package code
-	new_code = g_slist_append( new_code, gtk_entry_get_text( input_code ) );
+	new_code = g_slist_append( new_code, g_strdup( gtk_entry_get_text( input_code ) ) );
 	g_hash_table_insert( config, g_strdup( "code" ), new_code );
 
 	// Update package major number
-	new_major = g_slist_append( new_major, gtk_spin_button_get_value( input_major ) );
+	new_major = g_slist_append( new_major, g_strdup_printf( "%lf", gtk_spin_button_get_value( input_major ) ) );
 	g_hash_table_insert( config, g_strdup( "major" ), new_major );
 
 	// Update package minor number
-	new_minor = g_slist_append( new_minor, gtk_spin_button_get_value( input_minor ) );
-	g_hash_table_insert( config, g_strdup( "minor" ), new_major );
+	new_minor = g_slist_append( new_minor, g_strdup_printf( "%lf", gtk_spin_button_get_value( input_minor ) ) );
+	g_hash_table_insert( config, g_strdup( "minor" ), new_minor );
 
 	// Update package patch number
-	new_patch = g_slist_append( new_patch, gtk_spin_button_get_value( input_patch ) );
+	new_patch = g_slist_append( new_patch, g_strdup_printf( "%lf", gtk_spin_button_get_value( input_patch ) ) );
 	g_hash_table_insert( config, g_strdup( "patch" ), new_patch );
 
 	// Update package included files
@@ -3803,28 +3858,40 @@ void update_config_from_view() {
 
 	// Update package included files
 	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+
+	g_hash_table_foreach( config, dump_hash, NULL );
 }
 
+/**
+ * Puts contents of text buffer into SList
+ */
 GSList *text_buffer_to_slist( GtkTextBuffer* buffer, GSList *list ) {
-	GtkTextIter *start = NULL;
-	GtkTextIter *end = NULL;
-	gchar text;
+	if ( DEBUG )print_color( B_GREEN, "text_buffer_to_slist: Getting buffer contents...\n" );
+
+	GtkTextIter start;
+	GtkTextIter end;
+	gchar *text;
 	gchar **parts;
 	gchar **p;
 
-	gtk_text_buffer_get_bounds( buffer, start, end );
-	text = gtk_text_buffer_get_text( buffer, start, end, FALSE );
+	gtk_text_buffer_get_start_iter( buffer, &start );
+	gtk_text_buffer_get_end_iter( buffer, &end );
+
+	text = gtk_text_buffer_get_text( buffer, &start, &end, FALSE );
+
+	if ( DEBUG )g_print( "Value: %s\n", text );
+
 	parts = g_strsplit( text, "\n", -1 );
+
+	if ( DEBUG )dump_vector( parts );
 
 	p = parts;
 
-	while( p != NULL ) {
-		list = g_slist_append( list, g_strdup( &p ) );
+	while( *p != NULL ) {
+		list = g_slist_append( list, g_strdup( *p ) );
 		p++;
 	}
 
-	g_free( start );
-	g_free( end );
 	g_free( text );
 	g_strfreev( parts );
 

@@ -119,6 +119,8 @@ void reload_config( GtkButton *button, gpointer );
 void save_config( GtkButton *button, gpointer );
 void delete_config( GtkButton *button, gpointer );
 void update_config_from_view( void );
+GSList *text_buffer_to_slist( GtkTextBuffer*, GSList* );
+char *get_package_name( void );
 
 
 #define MAX_LINE 400
