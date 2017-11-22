@@ -6,6 +6,9 @@
 #include "path.h"
 #include "error.h"
 
+static GHashTable *stat_cache = NULL;
+int is_stat_cache_inited = 0;
+
 size_t get_path_max_size() {
 	char* ptr;
 	size_t size;
@@ -210,4 +213,94 @@ void print_color( const char *color, char *format, ... ) {
 	vprintf( format, args );
 	printf( "\e[0m\n" );
 	va_end( args );
+}
+
+/**
+ * POSIX unlink wrapper
+ */
+int Unlink( char *name ) {
+	int status;
+
+	if ( 0 == ( status = unlink( name ) ) ) {
+		return 0;
+	}
+
+	fprintf( stderr, "Failed to unlink file '%s': %s\n", name, strerror( errno ) );
+
+	return status;
+}
+
+/**
+ * POSIX lstat wrapper
+ * Returns pointer to stat buffer. Need to be freed
+ */
+struct stat *Lstat( char *path ) {
+	struct stat *return_buffer, *stat_buffer = _Lstat( path );
+
+	if ( NULL == stat_buffer ) return NULL;
+
+	return_buffer = g_memdup( stat_buffer, sizeof( struct stat ) );
+
+	return return_buffer;
+}
+
+/**
+ * POSIX lstat wrapper
+ * Returns pointer to stat buffer (data is cached)
+ * For internal use since returns pointer to record in hash table (may not be freed)
+ */
+struct stat *_Lstat( char *path ) {
+	struct stat *stat_buffer;
+
+	// Initialize stat hash
+	if ( 0 == is_stat_cache_inited ) {
+		stat_cache = g_hash_table_new_full( g_str_hash, g_str_equal, (GDestroyNotify)clean_stat_cache, (GDestroyNotify)clean_stat_cache );
+		is_stat_cache_inited = 1;
+	}
+
+	// Hash lookup
+	if ( NULL == ( stat_buffer = g_hash_table_lookup( stat_cache, path ) ) ) {
+		stat_buffer = g_malloc0( sizeof( struct stat ) );
+
+		if ( lstat( path, stat_buffer ) < 0 ) {
+			fprintf( stderr, "Failed to get statistics for '%s' in %s:%i: %s\n", path, __FILE__, __LINE__, strerror( errno ) );
+			return NULL;
+		}
+
+		g_hash_table_insert( stat_cache, g_strdup( path ), stat_buffer );
+	}
+
+	return stat_buffer;
+}
+
+/**
+ * Checks if path is a regular file
+ */
+gboolean is_dir( char *path ) {
+	struct stat *stat_buffer = _Lstat( path );
+
+	if ( NULL == stat_buffer ) return FALSE;
+
+	return S_ISDIR( stat_buffer->st_mode );
+}
+
+/**
+ * Checks if path is a directory
+ */
+gboolean is_file( char *path ) {
+	struct stat *stat_buffer = _Lstat( path );
+
+	if ( NULL == stat_buffer ) return FALSE;
+
+	return S_ISREG( stat_buffer->st_mode );
+}
+
+/**
+ * Callback to Clean up stat cache
+ */
+void clean_stat_cache( char* value ) {
+	int debug = 1;
+
+	if ( debug )printf( "Freeing stat cache value %s", (char*)value );
+	g_free( value );
 }

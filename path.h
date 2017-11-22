@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <string.h>
 #include <wchar.h>
+#include <sys/stat.h>
 
 #ifdef PATH_MAX
 	static long pathmax = PATH_MAX;
@@ -43,5 +44,11 @@ void dump_string( char * );
 void dump_hash( gpointer, gpointer, gpointer );
 void dump_vector( char** );
 void print_color( const char *, char *, ... );
+int Unlink( char* );
+struct stat *Lstat( char* );
+struct stat *_Lstat( char* );
+gboolean is_dir( char* );
+gboolean is_file( char*);
+void clean_stat_cache( char* );
 
 #endif

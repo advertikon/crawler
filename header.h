@@ -33,9 +33,10 @@ typedef void Sigfunc( int );
 typedef int It_file(  char*, struct stat* );
 typedef int It_dir(  char*, struct stat* );
 typedef int It_error(  char* );
+typedef int (*cb)( void*, void* );
 
 int usage( void );
-int iterate(  char*, It_file*, It_dir*, It_error* );
+int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
 int parse_config( char* );
 int add_to(  char* );
 int del_from(  char*, struct llist* );
@@ -121,6 +122,8 @@ void delete_config( GtkButton *button, gpointer );
 void update_config_from_view( void );
 GSList *text_buffer_to_slist( GtkTextBuffer*, GSList* );
 char *get_package_name( void );
+void delete_config_dialog_show( GtkButton *, gpointer );
+void delete_config_dialog_hide( GtkButton *, gpointer );
 
 
 #define MAX_LINE 400

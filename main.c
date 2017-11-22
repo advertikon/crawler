@@ -75,6 +75,13 @@ GtkButton *button_reload_config;
 GtkButton *button_save_config;
 GtkButton *button_delete_config;
 
+// Delete package config dialog
+GtkDialog *delete_package_confirm;
+
+// Delete package confirm dialog's buttons
+GtkButton *button_delete_package_ok;
+GtkButton *button_delete_package_cancel;
+
 // Select package event handler ID
 gulong select_package_handler = 0;
 
@@ -108,21 +115,27 @@ int main( int argc, char **argv ) {
 	g_free( dir );
 	g_free( file );
 
-	// Main window
+	/*                     Main window                       */
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
 
-    // Select package combobox
+    // Close the program
+    g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
+
+    /*                    Select package combobox              */
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
 
-    // Module code input
-    input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
+    // Select configuration file action
+    select_package_handler = g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
 
-    // Version numbers
+    /*                    Module code input                     */
+    input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
+ 
+    /*                    Version numbers                        */
     input_major = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_major" ) );
     input_minor = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_minor" ) );
     input_patch = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_patch" ) );
 
-    // Filter inputs
+    /*                    Filter inputs                           */
     buffer_include_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
     buffer_exclude_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_file" ) );
     buffer_include_folder = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_folder" ) );
@@ -130,16 +143,10 @@ int main( int argc, char **argv ) {
     buffer_include_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_regex" ) );
     buffer_exclude_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_regex" ) );
 
-    // Configuration buttons
+    /*                     Configuration buttons                   */
     button_reload_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_reload_config" ) );
     button_save_config   = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_save_config" ) );
     button_delete_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_config" ) );
-
-    // Close the program
-    g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
-
-    // Select configuration file action
-    select_package_handler = g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
 
     // Reload configuration files click handler
     g_signal_connect ( button_reload_config, "clicked", G_CALLBACK ( reload_config ), NULL);
@@ -149,10 +156,13 @@ int main( int argc, char **argv ) {
 
     // Delete configuration files click handler
     g_signal_connect ( button_delete_config, "clicked", G_CALLBACK ( delete_config ), NULL);
-  
-    gtk_widget_show (window);
 
-    // init_filter_names();
+    /*                      Confirm delete package dialog                     */
+    delete_package_confirm = GTK_DIALOG( gtk_builder_get_object( UI_builder, "delete_package_confirm" ) );
+    button_delete_package_ok = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_ok" ) );
+    button_delete_package_cancel = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_cancel" ) );
+  
+    gtk_widget_show( window );
 
     // Populate select package combobox with data
     get_package_configs();
@@ -523,7 +533,7 @@ void show_error( char *message ) {
 }
 
 int usage() {
-	printf("%.20s - %s\n", "exit", "exit function" );
+	// printf("%.20s - %s\n", "exit", "exit function" );
 	exit( 0 );
 }
 
@@ -538,7 +548,7 @@ int usage() {
  * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
  *           otherwise function returns with status 1
  */
-int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
+int iterate(  char* path, cb file_c, cb dir_c, cb err_c ) {
 	int debug = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", path );
@@ -546,17 +556,17 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 	DIR* dir;
 	struct dirent* item;
 	char item_name[ path_max_size ];
-	struct stat stat_buffer;
+	struct stat *stat_buffer = Lstat( path );
 
-	if ( lstat( path, &stat_buffer ) < 0 ) {
-		if ( NULL != err_c && 0 != (*err_c)( path ) ) {
+	if ( NULL == stat_buffer ) {
+		if ( NULL != err_c && 0 != err_c( path, NULL ) ) {
 			exit( 1 );
 		}
 
 		return 1;
 	}
 
-	if ( S_ISREG( stat_buffer.st_mode ) ) {
+	if ( S_ISREG( stat_buffer->st_mode ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is file\n" );
 
 		if ( path[ 0 ] != '/' ) {
@@ -570,7 +580,7 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 			return 1;
 		}
 
-	} else if ( S_ISDIR( stat_buffer.st_mode ) ) {
+	} else if ( S_ISDIR( stat_buffer->st_mode ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is folder\n" );
 
 		if ( NULL == ( dir = opendir( path ) ) ) {
@@ -600,7 +610,7 @@ int iterate(  char* path, It_file *file_c, It_dir *dir_c, It_error *err_c ) {
 		}
 
 		// Run DIR callback after all FILE callbacks
-		if ( NULL != dir_c && 0 != (*dir_c)( path, &stat_buffer ) ) {
+		if ( NULL != dir_c && 0 != dir_c( path, &stat_buffer ) ) {
 			return 1;
 		}
 
@@ -756,16 +766,16 @@ xmlNodePtr config_to_xml( char *name, GSList *l ) {
  *
  */
 int write_config_section( char* name, FILE* stream, struct llist* l ) {
-	if ( NULL != l && l->first ) {
-		l->current = l->first;
+	// if ( NULL != l && l->first ) {
+	// 	l->current = l->first;
 
-		fprintf( stream, "%s:\n", name );
+	// 	fprintf( stream, "%s:\n", name );
 
-		while( l->current ) {
-			fprintf( stream, " - %s\n", l->current->as_string( l->current ) );
-			l->current = l->current->next;
-		}
-	}
+	// 	while( l->current ) {
+	// 		fprintf( stream, " - %s\n", l->current->as_string( l->current ) );
+	// 		l->current = l->current->next;
+	// 	}
+	// }
 
 	return 0;
 }
@@ -775,19 +785,19 @@ int write_config_section( char* name, FILE* stream, struct llist* l ) {
  *
  */
 int start_del( struct llist* l ) {
-	if ( l && l->first ) {
-		printf(
-			"Type a number of a record to be deleted\n"
-			"To save changes type 's', to discard changes type 'q'\n"
-		);
+	// if ( l && l->first ) {
+	// 	printf(
+	// 		"Type a number of a record to be deleted\n"
+	// 		"To save changes type 's', to discard changes type 'q'\n"
+	// 	);
 
-		print_del_list( l );
+	// 	print_del_list( l );
 		
-	} else {
-		printf( "List is empty\n" );
+	// } else {
+	// 	printf( "List is empty\n" );
 
-		return 1;
-	}
+	// 	return 1;
+	// }
 
 	return 0;
 }
@@ -797,23 +807,23 @@ int start_del( struct llist* l ) {
  *
  */
 int print_del_list( struct llist* l ) {
-	if ( NULL == l || NULL == l->first ) return 1;
+	// if ( NULL == l || NULL == l->first ) return 1;
 
-	l->current = l->first;
+	// l->current = l->first;
 
-	while( l->current && l->current->name ) {
-		if ( NULL != temp && NULL != temp->first && 0 == temp->has_value( l->current->name, temp ) ) {
-			printf( "*" );
+	// while( l->current && l->current->name ) {
+	// 	if ( NULL != temp && NULL != temp->first && 0 == temp->has_value( l->current->name, temp ) ) {
+	// 		printf( "*" );
 
-		} else {
-			printf( " " );
-		}
+	// 	} else {
+	// 		printf( " " );
+	// 	}
 
-		printf( "[%.2s] - %s\n", l->current->name, l->current->as_string( l->current ) );
-		l->current = l->current->next;
-	}
+	// 	printf( "[%.2s] - %s\n", l->current->name, l->current->as_string( l->current ) );
+	// 	l->current = l->current->next;
+	// }
 
-	printf( "Remove item >> " );
+	// printf( "Remove item >> " );
 
 	return 0;
 }
@@ -823,18 +833,18 @@ int print_del_list( struct llist* l ) {
  *
  */
 int start_add( struct llist* l ) {
-	printf( "Type in one item at line\n" );
-	printf( "To save changes print 's', to discard changes - 'q'\n" );
+	// printf( "Type in one item at line\n" );
+	// printf( "To save changes print 's', to discard changes - 'q'\n" );
 
-	if ( NULL != l->first ) {
-		printf( "Existing items:\n" );
-		l->print( l );
+	// if ( NULL != l->first ) {
+	// 	printf( "Existing items:\n" );
+	// 	l->print( l );
 
-	} else {
-		printf( "List is empty\n" );
-	}
+	// } else {
+	// 	printf( "List is empty\n" );
+	// }
 
-	printf( "Add item >> " );
+	// printf( "Add item >> " );
 
 	return 0;
 }
@@ -844,12 +854,12 @@ int start_add( struct llist* l ) {
  *
  */
 int add_to(  char *item ) {
-	if ( NULL != temp ) {
-		printf( "Add item >> " );
-		return temp->add( NULL, item, temp );
-	}
+	// if ( NULL != temp ) {
+	// 	printf( "Add item >> " );
+	// 	return temp->add( NULL, item, temp );
+	// }
 
-	fprintf( stderr, "Failed to add item to list: list is missing" );
+	// fprintf( stderr, "Failed to add item to list: list is missing" );
 
 	return 1;
 }
@@ -859,13 +869,13 @@ int add_to(  char *item ) {
  *
  */
 int del_from(  char *name, struct llist* l ) {
-	if ( NULL != temp ) {
-		temp->add( NULL, name, temp );
-		printf( "\033[%dA", l->count( l ) + 1 );
-		printf( "\033[100D" );
-		print_del_list( l );
-		printf( "\033[K" );
-	}
+	// if ( NULL != temp ) {
+	// 	temp->add( NULL, name, temp );
+	// 	printf( "\033[%dA", l->count( l ) + 1 );
+	// 	printf( "\033[100D" );
+	// 	print_del_list( l );
+	// 	printf( "\033[K" );
+	// }
 
 	return 0;
 }
@@ -998,8 +1008,8 @@ int confirmed_operation() {
  *
  */
 int add_to_config( struct llist* l ) {
-	l->merge( temp, l );
-	config_is_dirty = 1;
+	// l->merge( temp, l );
+	// config_is_dirty = 1;
 
 	return 0;
 }
@@ -1009,27 +1019,27 @@ int add_to_config( struct llist* l ) {
  *
  */
 int remove_from_config( struct llist* l ) {
-	if ( NULL != l && NULL != l->first ) {
-		l->current = l->first;
+	// if ( NULL != l && NULL != l->first ) {
+	// 	l->current = l->first;
 
-		while( NULL != l->current ) {
-			if ( 0 == temp->has_value( l->current->name, temp ) ) {
-				l->remove( l->current->name, l );
+	// 	while( NULL != l->current ) {
+	// 		if ( 0 == temp->has_value( l->current->name, temp ) ) {
+	// 			l->remove( l->current->name, l );
 
-				if ( NULL == l->current ) {
-					break;
+	// 			if ( NULL == l->current ) {
+	// 				break;
 
-				} else {
-					l->current = l->first;
-					continue;
-				}
-			}
+	// 			} else {
+	// 				l->current = l->first;
+	// 				continue;
+	// 			}
+	// 		}
 
-			l->current = l->current->next;
-		}
+	// 		l->current = l->current->next;
+	// 	}
 
-		config_is_dirty = 1;
-	}
+	// 	config_is_dirty = 1;
+	// }
 
 	return 0;
 }
@@ -1039,10 +1049,10 @@ int remove_from_config( struct llist* l ) {
  *
  */
 int end_operation() {
-	temp->empty( temp );
-	wait_confirm = 0;
-	command = 0;
-	save_me = 0;
+	// temp->empty( temp );
+	// wait_confirm = 0;
+	// command = 0;
+	// save_me = 0;
 
 	return 0;
 }
@@ -1096,61 +1106,61 @@ void int_handler( int s ) {
  * Default: fail
  */
 int check_file(  char *name ) {
-	// int debug = 0;
+	int debug = 0;
 
-	// if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
+	if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
 
-	// char dir[ path_max_size ];
-	// char *pos;
+	char dir[ path_max_size ];
+	char *pos;
 
-	// int max_incl_dir;
-	// int max_excl_dir;
+	int max_incl_dir;
+	int max_excl_dir;
 
-	// // File is in the include list
-	// if ( 0 == include_file->has_value( name, include_file ) ) {
-	// 	if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
-	// 	return 0;
-	// }
+	// File is in the include list
+	if ( 0 == include_file->has_value( name, include_file ) ) {
+		if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
+		return 0;
+	}
 
-	// // File is in the exclude list
-	// if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
-	// 	if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
-	// 	return 1;
-	// }
+	// File is in the exclude list
+	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
+		if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
+		return 1;
+	}
 
-	// strncpy( dir, name, path_max_size );
-	// pos = strrchr( dir, '/' );
+	strncpy( dir, name, path_max_size );
+	pos = strrchr( dir, '/' );
 
-	// if ( NULL != pos ) {
-	// 	*pos = '\0';
+	if ( NULL != pos ) {
+		*pos = '\0';
 
-	// 	if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
+		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
 
-	// 	collide_length( dir, include_dir, &max_incl_dir );
-	// 	collide_length( dir, exclude_dir, &max_excl_dir );
+		collide_length( dir, include_dir, &max_incl_dir );
+		collide_length( dir, exclude_dir, &max_excl_dir );
 
-	// 	if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
+		if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
 		
-	// 	if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
-	// 		if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
-	// 		return 0;
-	// 	}
+		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
+			if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
+			return 0;
+		}
 
-	// 	if ( max_excl_dir > 0 ) {
-	// 		if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
-	// 		return 1;
-	// 	}
-	// }
+		if ( max_excl_dir > 0 ) {
+			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
+			return 1;
+		}
+	}
 
-	// if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
+	if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
 
-	// if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
-	// 	if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
+	if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
+		if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
 
-	// 	return 0;
-	// }
+		return 0;
+	}
 
-	// if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
+	if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
 
 	return 1;
 }
@@ -1343,24 +1353,24 @@ void end_clock( char *msg ) {
  *
  */
 int print_config() {
-	FILE *stream = fopen( config_name, "r" );
-	char buffer[ MAX_LINE ];
+	// FILE *stream = fopen( config_name, "r" );
+	// char buffer[ MAX_LINE ];
 
-	if ( NULL != stream ) {
-		while ( NULL != fgets( buffer, MAX_LINE, stream ) ) {
-			if ( EOF == fputs( buffer, stdout ) ) {
-				perror( "Print configuration" );
-				exit( 1 );
-			}
-		}
+	// if ( NULL != stream ) {
+	// 	while ( NULL != fgets( buffer, MAX_LINE, stream ) ) {
+	// 		if ( EOF == fputs( buffer, stdout ) ) {
+	// 			perror( "Print configuration" );
+	// 			exit( 1 );
+	// 		}
+	// 	}
 
-		if ( ferror( stream ) ) {
-			perror( "Print configuration" );
-			exit( 1 );
-		}
+	// 	if ( ferror( stream ) ) {
+	// 		perror( "Print configuration" );
+	// 		exit( 1 );
+	// 	}
 
-		fclose( stream );
-	}
+	// 	fclose( stream );
+	// }
 
 	return 0;
 }
@@ -1370,19 +1380,19 @@ int print_config() {
  *
  */
 int print_files() {
-	if ( NULL == files->first ) {
-		printf( "List is empty\n" );
+	// if ( NULL == files->first ) {
+	// 	printf( "List is empty\n" );
 
-	} else {
-		files->current = files->first;
+	// } else {
+	// 	files->current = files->first;
 
-		while ( files->current ) {
-			printf( "[%3d] - %s\n", files->current->index, files->current->name );
-			files->current = files->current->next;
-		}
+	// 	while ( files->current ) {
+	// 		printf( "[%3d] - %s\n", files->current->index, files->current->name );
+	// 		files->current = files->current->next;
+	// 	}
 
-		files->current = files->first;
-	}
+	// 	files->current = files->first;
+	// }
 
 	return 0;
 }
@@ -1396,7 +1406,7 @@ static void set_winsize() {
 		print_error( "STDIN is not a terminal device" );
 	}
 
-	if ( ioctl( STDIN_FILENO, TIOCGWINSZ, ( char * ) &win_size ) < 0 ) {
+	if ( ioctl( STDIN_FILENO, TIOCGWINSZ, (char *)&win_size ) < 0 ) {
 		print_error( "TIOCGWINSZ error" );
 	}
 
@@ -2522,7 +2532,7 @@ int save_translation( char *name, struct llist *l ) {
 }
 
 /**
- * Runs runs all registered filters on each package files in turn
+ * Runs all registered filters on each package files in turn
  * CHDIR to temp folder and then back to CWD
  */
 int run_filters() {
@@ -2626,7 +2636,7 @@ int init_filters() {
 }
 
 /**
- * Returns pointer to list of matches get from match structure of regex
+ * Returns pointer to list of matches gotten from match structure of regex
  *
  */
 struct llist *get_matches( const char *str ) {
@@ -3626,6 +3636,19 @@ void fill_in_input_buffer( void *text, void *buffer ) {
 void clear_config_buffers() {
 	if ( DEBUG ) print_color( B_GREEN, "clear_config_buffers: Clearing config view buffers...\n" );
 
+	// Check view controls
+	g_return_if_fail( NULL != config );
+	g_return_if_fail( NULL != input_code );
+	g_return_if_fail( NULL != input_major );
+	g_return_if_fail( NULL != input_minor );
+	g_return_if_fail( NULL != input_patch );
+	g_return_if_fail( NULL != buffer_include_file );
+	g_return_if_fail( NULL != buffer_exclude_file );
+	g_return_if_fail( NULL != buffer_include_folder );
+	g_return_if_fail( NULL != buffer_exclude_folder );
+	g_return_if_fail( NULL != buffer_include_regex );
+	g_return_if_fail( NULL != buffer_exclude_regex );
+
 	GtkTextBuffer *list[] = {
 		buffer_include_file,
 		buffer_exclude_file,
@@ -3648,6 +3671,14 @@ void clear_config_buffers() {
 		gtk_text_buffer_delete ( list[ i ], start, end );
 		i++;
 	}
+
+	// Clear code input
+	gtk_entry_set_text( input_code, "" );
+
+	// Clean version numbers
+	gtk_spin_button_set_value( input_major, 0 );
+	gtk_spin_button_set_value( input_minor, 0 );
+	gtk_spin_button_set_value( input_patch, 0 );
 
 	g_free( start );
 	g_free( end );
@@ -3791,10 +3822,38 @@ char *get_package_name() {
 }
 
 /**
+ * Shows delete package configuration dialog
+ */
+void delete_config_dialog_show( GtkButton *button, gpointer data ) {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> SHOW DIALOG <<<<<<<<\n");
+	gtk_widget_show( GTK_WIDGET( delete_package_confirm ) );
+}
+
+/**
  * Deletes configuration file from the disk
  */
 void delete_config( GtkButton *button, gpointer data ) {
 	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> DELETE CONFIG <<<<<<<<\n");
+
+	gtk_widget_hide( GTK_WIDGET( delete_package_confirm ) );
+
+	g_return_if_fail( NULL != select_package );
+
+	char *name = gtk_combo_box_text_get_active_text( select_package );
+	if ( Unlink( name ) == 0 ) {
+		fprintf( stderr, "Configuration file '%s' has been deleted\n", name );
+		reload_config( NULL, NULL );
+	}
+
+	g_free( name );
+}
+
+/**
+ * Hides delete package configuration dialog
+ */
+void delete_config_dialog_hode( GtkButton *button, gpointer data ) {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> HIDE DIALOG <<<<<<<<\n");
+	gtk_widget_hide( GTK_WIDGET( delete_package_confirm ) );
 }
 
 void update_config_from_view() {
@@ -3858,8 +3917,6 @@ void update_config_from_view() {
 
 	// Update package included files
 	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
-
-	g_hash_table_foreach( config, dump_hash, NULL );
 }
 
 /**
