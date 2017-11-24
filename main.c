@@ -32,14 +32,25 @@ int patch = 0; // Package patch number
 size_t path_max_size;
 
 struct llist
-			*files,
+			// *files,
 			*temp,
 			*filters,
 			*admin_t,
 			*catalog_t,
 			*common_t;
+
 GHashTable *config = NULL;
 GSList *filter_names = NULL;
+
+GSList *files;
+
+// Lists to store filters temporary during file system iteration to boost up performance
+GSList *include_file_temp;
+GSList *exclude_file_temp;
+GSList *include_folder_temp;
+GSList *exclude_folder_temp;
+GSList *include_regex_temp;
+GSList *exclude_regex_temp;
 
 struct winsize win_size;
 
@@ -537,6 +548,17 @@ int usage() {
 	exit( 0 );
 }
 
+void get_files() {
+	include_file_temp = g_hash_table_lookup( config, "include_file" );
+	exclude_file_temp = g_hash_table_lookup( config, "include_file" );
+	include_folder_temp = g_hash_table_lookup( config, "include_file" );
+	exclude_folder_temp = g_hash_table_lookup( config, "include_file" );
+	include_regex_temp = g_hash_table_lookup( config, "include_file" );
+	exclude_regex_temp = g_hash_table_lookup( config, "include_file" );
+
+	iterate( g_strdup( cwd ), &check_item, NULL, &on_iterate_error );
+}
+
 /**
  * Iterates over FS structure
  * Fires callbacks:
@@ -548,69 +570,78 @@ int usage() {
  * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
  *           otherwise function returns with status 1
  */
-int iterate(  char* path, cb file_c, cb dir_c, cb err_c ) {
+int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 	int debug = 0;
+
+	DIR* dir = NULL;
+	struct dirent* dir_entry = NULL;
+	struct stat *stat_buffer = NULL;
+	gboolean = is_error = FALSE;
+	char *dir_to_iterate;
 
 	if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", path );
 
-	DIR* dir;
-	struct dirent* item;
-	char item_name[ path_max_size ];
+	if ( G_DIR_SEPARATOR_S != path[ 0 ] ) {
+		// absolute_path = g_build_filename( cwd, )
+
+		// TODO: handle situation with relative paths, if needed
+		fprintf( stderr, "Path need to be absolute (%s). In %s:%i\n", path, __FILE__, __LINE__ );
+		is_error = TRUE;
+		goto exit_point;
+	}
+
 	struct stat *stat_buffer = Lstat( path );
 
 	if ( NULL == stat_buffer ) {
-		if ( NULL != err_c && 0 != err_c( path, NULL ) ) {
+		if ( NULL != err_cb && 0 != err_cb( path, NULL ) ) {
 			exit( 1 );
 		}
 
-		return 1;
+		is_error = TRUE;
+		goto exit_point;
 	}
 
-	if ( S_ISREG( stat_buffer->st_mode ) ) {
+	if ( is_file( path ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is file\n" );
 
-		if ( path[ 0 ] != '/' ) {
-			if ( DEBUG || debug )fprintf( stderr, "Relative path\n" );
-			add_cwd( path );
+		if ( NULL != file_cb && 0 != file_cb( path, NULL ) ) {
+			is_error = TRUE;
+			goto exit_point;
 		}
 
-		if ( DEBUG || debug )fprintf( stderr, "Resulting path: %s\n", path );
-
-		if ( NULL != file_c && 0 != (*file_c)( path, &stat_buffer ) ) {
-			return 1;
-		}
-
-	} else if ( S_ISDIR( stat_buffer->st_mode ) ) {
+	} else if ( is_dir( path ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is folder\n" );
 
 		if ( NULL == ( dir = opendir( path ) ) ) {
-			perror( "Opendir error" );
-			return 1;
+			fprintf(stderr, "Failed to open folder in %s:%i:%s\n", __FILE__, __LINE__, strerror( errno ) );
+			is_error = TRUE;
+			goto exit_point;
 		}
 
 		if ( DEBUG || debug )fprintf( stderr, "Dir has been entered: %s\n", path );
 
 		depth++;
 
-		while ( NULL != ( item = readdir( dir ) ) ) {
-			if ( item->d_name[ 0 ] == '.' ) {
+		errno = 0;
+
+		while ( NULL != ( dir_entry = readdir( dir ) ) ) {
+			if ( dir_ntry->d_name[ 0 ] == '.' ) {
 				continue;
 			}
 
-			memset( item_name, '\0', path_max_size );
-			strncpy( item_name, path, path_max_size );
+			dir_to_iterate = g_build_filename( path, dir_entry->d_name ); /* needs to be freed in callee */
 
-			if ( item_name[ strlen( item_name ) - 1 ] != '/') {
-				strcat( item_name, "/" );
-			}
+			iterate( dir_to_iterate, file_cb, dir_cb, err_cb );
+		}
 
-			strcat( item_name, item->d_name ); 
-
-			iterate( item_name, file_c, dir_c, err_c );
+		if ( 0 != errno && NULL == item ) {
+			fprintf( stderr, "Error while reading directory %s: %s in %s:%i\n", path, strerror( errno ), __FILE__, __LINE__ );
+			is_error = TRUE;
+			goto exit_point;
 		}
 
 		// Run DIR callback after all FILE callbacks
-		if ( NULL != dir_c && 0 != dir_c( path, &stat_buffer ) ) {
+		if ( NULL != dir_cb && 0 != dir_cb( path, NULL ) ) {
 			return 1;
 		}
 
@@ -619,6 +650,18 @@ int iterate(  char* path, cb file_c, cb dir_c, cb err_c ) {
 
 	} else {
 		print_error( "%s is not a file nor a directory\n", path );
+		is_error = TRUE;
+		goto exit_point;
+	}
+
+exit_point:
+	g_free( path );
+	g_free( stat_buffer );
+
+	if ( NULL != dir ) g_free( dir );
+
+	if ( is_error ) {
+		return 1;
 	}
 
 	return 0;
@@ -626,20 +669,19 @@ int iterate(  char* path, cb file_c, cb dir_c, cb err_c ) {
 
 /**
  * Checks item (file) and add it to package files list on success 
- *
  */
-int check_item(  char *name, struct stat* sb ) {
-	if ( DEBUG )fprintf( stderr, "Start checking item %s\n", name );
+int check_item( char *name, void* data ) {
+	if ( DEBUG )fprintf( stderr, "Start checking file %s\n", name );
 
-	if ( 0 == check_file( &name[ cwd_length + 1 ] ) ) {
+	if ( check_file( name ) ) {
 		if ( DEBUG )fprintf( stderr, "Passed check\n" );
 
-		files->add( &name[ cwd_length + 1 ], name, files );
-		total_size += sb->st_size;
+		g_slist_append( files, g_strdup( name ) );
+		total_size += filesize( name );
 		files_count++;
 
 	} else {
-		if ( DEBUG )fprintf( stderr, "Failed check\n" );
+		if ( DEBUG )fprintf( stderr, "Check failed\n" );
 	}
 
 	return 0;
@@ -765,7 +807,7 @@ xmlNodePtr config_to_xml( char *name, GSList *l ) {
  *
  *
  */
-int write_config_section( char* name, FILE* stream, struct llist* l ) {
+// int write_config_section( char* name, FILE* stream, struct llist* l ) {
 	// if ( NULL != l && l->first ) {
 	// 	l->current = l->first;
 
@@ -777,14 +819,14 @@ int write_config_section( char* name, FILE* stream, struct llist* l ) {
 	// 	}
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Mark start of delete configuration action
  *
  */
-int start_del( struct llist* l ) {
+// int start_del( struct llist* l ) {
 	// if ( l && l->first ) {
 	// 	printf(
 	// 		"Type a number of a record to be deleted\n"
@@ -799,14 +841,14 @@ int start_del( struct llist* l ) {
 	// 	return 1;
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Prints list of configuration list that can be deleted
  *
  */
-int print_del_list( struct llist* l ) {
+// int print_del_list( struct llist* l ) {
 	// if ( NULL == l || NULL == l->first ) return 1;
 
 	// l->current = l->first;
@@ -825,14 +867,14 @@ int print_del_list( struct llist* l ) {
 
 	// printf( "Remove item >> " );
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Marks start of add configuration action
  *
  */
-int start_add( struct llist* l ) {
+// int start_add( struct llist* l ) {
 	// printf( "Type in one item at line\n" );
 	// printf( "To save changes print 's', to discard changes - 'q'\n" );
 
@@ -846,14 +888,14 @@ int start_add( struct llist* l ) {
 
 	// printf( "Add item >> " );
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Adds item to configuration list
  *
  */
-int add_to(  char *item ) {
+// int add_to(  char *item ) {
 	// if ( NULL != temp ) {
 	// 	printf( "Add item >> " );
 	// 	return temp->add( NULL, item, temp );
@@ -861,14 +903,14 @@ int add_to(  char *item ) {
 
 	// fprintf( stderr, "Failed to add item to list: list is missing" );
 
-	return 1;
-}
+// 	return 1;
+// }
 
 /**
  * Deletes item from configuration list
  *
  */
-int del_from(  char *name, struct llist* l ) {
+// int del_from(  char *name, struct llist* l ) {
 	// if ( NULL != temp ) {
 	// 	temp->add( NULL, name, temp );
 	// 	printf( "\033[%dA", l->count( l ) + 1 );
@@ -877,14 +919,14 @@ int del_from(  char *name, struct llist* l ) {
 	// 	printf( "\033[K" );
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Prints out a list of available commands
  *
  */
-int show_commands() {
+// int show_commands() {
 	// char *line = malloc( win_size.ws_col + 1 );
 	// memset( line, '-', win_size.ws_col );
 	// line[ win_size.ws_col ] = '\0';
@@ -952,13 +994,13 @@ int show_commands() {
 	// );
 
 	// free( line );
-}
+// }
 
 /**
  * Action switcher after action confirmation action (eg save, delete)
  *
  */
-int confirmed_operation() {
+// int confirmed_operation() {
 	// switch ( command ) {
 	// case C_ADD_INCL_FOLDER:
 	// 	add_to_config( include_dir );
@@ -1000,25 +1042,25 @@ int confirmed_operation() {
 	// 	print_error( "Invalid command: %d\n", command );
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Merges config list with temporary configuration list
  *
  */
-int add_to_config( struct llist* l ) {
+// int add_to_config( struct llist* l ) {
 	// l->merge( temp, l );
 	// config_is_dirty = 1;
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Removes items from configuration list, which present in temporary configuration list
  *
  */
-int remove_from_config( struct llist* l ) {
+// int remove_from_config( struct llist* l ) {
 	// if ( NULL != l && NULL != l->first ) {
 	// 	l->current = l->first;
 
@@ -1041,21 +1083,21 @@ int remove_from_config( struct llist* l ) {
 	// 	config_is_dirty = 1;
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Mark operation add ended
  *
  */
-int end_operation() {
+// int end_operation() {
 	// temp->empty( temp );
 	// wait_confirm = 0;
 	// command = 0;
 	// save_me = 0;
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Reliable signal function from APU (restarts all interrupted system calls but SIGALARM)
@@ -1105,126 +1147,121 @@ void int_handler( int s ) {
  * Then checks if path is present in included regex list and is not present i excluded regex list. Check
  * Default: fail
  */
-int check_file(  char *name ) {
+gboolean check_file( char *name ) {
 	int debug = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
 
-	char dir[ path_max_size ];
-	char *pos;
+	int max_incl_dir_length = 0;
+	int max_excl_dir_length = 0;
 
-	int max_incl_dir;
-	int max_excl_dir;
+	char *relative_file_name = name[ strlen( cwd ) ];
+	char *relative_folder_name;
+
+	if ( DEBUG )printf( "Relative file name: '%s'\n", relative_file_name );
 
 	// File is in the include list
-	if ( 0 == include_file->has_value( name, include_file ) ) {
+	if ( NULL != g_slist_find( include_file_temp, relative_file_name ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
-		return 0;
+		return TRUE;
 	}
 
 	// File is in the exclude list
-	if ( 0 == exclude_file->has_value( name, exclude_file ) ) {
+	if (  NULL != g_slist_find( exclude_file_temp, relative_file_name ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
-		return 1;
+		return FALSE;
 	}
 
-	strncpy( dir, name, path_max_size );
-	pos = strrchr( dir, '/' );
+	relative_folder_name = g_path_get_dirname( relative_file_name );
 
-	if ( NULL != pos ) {
-		*pos = '\0';
+	if ( DEBUG )printf( "Relative folder: '%s'\n" );
 
-		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", dir );
+	// If path has folder part
+	if ( '.' != relative_folder_name ) {
+		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", relative_folder_name );
 
-		collide_length( dir, include_dir, &max_incl_dir );
-		collide_length( dir, exclude_dir, &max_excl_dir );
+		collide_length( relative_folder_name, include_folder_temp, &max_incl_dir_length );
+		collide_length( relative_folder_name, exclude_folder_temp, &max_excl_dir_length );
 
-		if ( DEBUG || debug )fprintf( stderr, "Included directory max. length: %d, excluded directory max. length: %d\n", max_incl_dir, max_excl_dir );
+		g_free( relative_folder_name );
+
+		if ( DEBUG || debug )
+			fprintf(
+				stderr,
+				"Included directory max. length: %d, excluded directory max. length: %d\n",
+				max_incl_dir_legth,
+				max_excl_dir_length
+			);
 		
-		if ( max_incl_dir > 0 && max_incl_dir >= max_excl_dir ) {
+		if ( max_incl_dir_length > 0 && max_incl_dir_length >= max_excl_dir_length ) {
 			if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
-			return 0;
+			return TRUE;
 		}
 
 		if ( max_excl_dir > 0 ) {
 			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
-			return 1;
+			return FALSE;
 		}
+
+	} else {
+		g_free( relative_folder_name );
 	}
 
 	if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
 
-	if ( 0 == check_regexp( name, include_regexp ) && 1 == check_regexp( name, exclude_regexp ) ) {
+	if ( TRUE == check_regexp( name, include_regex_temp ) && FALSE == check_regexp( name, exclude_regex_temp ) ) {
 		if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
 
-		return 0;
+		return TRUE;
 	}
 
-	if ( DEBUG || debug )fprintf( stderr, "Skipped\n");
+	if ( DEBUG || debug )fprintf( stderr, "No filter rules applied. Skip\n");
 
-	return 1;
+	return FALSE;
 }
 
 /**
- * Returns longest part
- *
+ * Returns longest path
  */
-int collide_length(  char *name, struct llist *l, int *max ) {
-	int span = 0;
-	int cur_str_len = 0;
+// void collide_length( char *name, GSList *list, int *max ) {
+	// int current_str_len = 0;
+	// *max = 0;
+	// GSList *curret = list;
 
-	*max = 0;
+	// while ( NULL != current ) {
+	// 	current_str_len = strspn( name, current->data );
 
-	if ( l->first ) {
-		l->current = l->first;
+	// 	// We already have longer match. Skip
+	// 	if ( *max < current_str_len ) {
+	// 		*max = current_str_len;
+	// 	}
 
-		while ( l->current ) {
-			cur_str_len = strlen( l->current->value );
-
-			if ( span > cur_str_len ) {
-				continue;
-			}
-
-			if( 0 == collide_span( name, l->current->value ) ) {
-				span = cur_str_len;
-
-				if ( span > *max ) {
-					*max = span;
-				}
-			}
-
-			l->current = l->current->next;
-		}
-
-		l->current = l->first;
-	}
-
-	return 0;
-}
+	// 	current = current->next;
+	// }
+// }
 
 /**
- * Calculates strings intersections
- *
+ * Calculates strings' intersection length
  */
-int collide_span(  char *h,  char *n ) {
-	int i;
-	int c = 0;
-	int nl = strlen( n );
-	int hl = strlen( h );
+// gboolean collide_span(  char *h,  char *n ) {
+// 	int i;
+// 	int c = 0;
+// 	int nl = strlen( n );
+// 	int hl = strlen( h );
 
-	if ( hl >= nl ) {
-		for( i = 0; i < nl; i++ ) {
-			if ( h[ i ] == n[ i ] ) {
-				c++;
+// 	if ( hl >= nl ) {
+// 		for( i = 0; i < nl; i++ ) {
+// 			if ( h[ i ] == n[ i ] ) {
+// 				c++;
 
-			} else {
-				break;
-			}
-		}
-	}
+// 			} else {
+// 				break;
+// 			}
+// 		}
+// 	}
 
-	return c == nl ? 0 : 1;
-}
+// 	return c == nl ? 0 : 1;
+// }
 
 /**
  * Tests if regular expression matches the pattern
@@ -1233,89 +1270,85 @@ int collide_span(  char *h,  char *n ) {
  * m - array of regmatch_t structures
  * Returns 0 if match succeeded
  */
-int match(  char* str,  char* pattern, regmatch_t *m, int flags ) {
-	size_t c = NULL == m ? 0 : REGEX_MATCH_COUNT;
-	int status;
+// int match(  char* str,  char* pattern, regmatch_t *m, int flags ) {
+	// size_t c = NULL == m ? 0 : REGEX_MATCH_COUNT;
+	// int status;
 
-	if ( DEBUG )fprintf( stderr, "Matching string '%s' against regex '%s'\n", str, pattern );
+	// if ( DEBUG )fprintf( stderr, "Matching string '%s' against regex '%s'\n", str, pattern );
 
-	if ( IS_EMPTY( str ) || IS_EMPTY( pattern ) ) {
-		if ( DEBUG )fprintf( stderr, "One of operands is empty. Skip\n" );
-		return 0;
-	}
+	// if ( IS_EMPTY( str ) || IS_EMPTY( pattern ) ) {
+	// 	if ( DEBUG )fprintf( stderr, "One of operands is empty. Skip\n" );
+	// 	return 0;
+	// }
 
-	regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
-	flags |= REG_EXTENDED;
+	// regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
+	// flags |= REG_EXTENDED;
 
-	if ( NULL == compilled ) {
-		print_error( "Failed to locate memory for regex_t structure" );
-	}
+	// if ( NULL == compilled ) {
+	// 	print_error( "Failed to locate memory for regex_t structure" );
+	// }
 
-	status = regcomp( compilled, pattern, flags );
+	// status = regcomp( compilled, pattern, flags );
 
-	if ( 0 != status ) {
-		print_error( get_regerror( status, compilled ) );
-	}
+	// if ( 0 != status ) {
+	// 	print_error( get_regerror( status, compilled ) );
+	// }
 
-	status = regexec( compilled, str, c, m, 0 );
+	// status = regexec( compilled, str, c, m, 0 );
 
-	if ( REG_ESPACE == status ) {
-		print_error( get_regerror( status, compilled ) );
-	}
+	// if ( REG_ESPACE == status ) {
+	// 	print_error( get_regerror( status, compilled ) );
+	// }
 
-	regfree( compilled );
-	free( compilled );
+	// regfree( compilled );
+	// free( compilled );
 
-	if ( DEBUG )fprintf( stderr, "Match status: %d\n", status );
+	// if ( DEBUG )fprintf( stderr, "Match status: %d\n", status );
 
-	return status;
-}
+// 	return status;
+// }
 
 /**
  * Returns error from regex library
  *
  */
-char *get_regerror ( int errcode, regex_t *compiled ) {
-	size_t length = regerror ( errcode, compiled, NULL, 0 );
-	char *buffer = malloc ( length );
+// char *get_regerror ( int errcode, regex_t *compiled ) {
+// 	size_t length = regerror ( errcode, compiled, NULL, 0 );
+// 	char *buffer = malloc ( length );
 
-	if ( NULL == buffer ) {
-		print_error( "Failed to allocate memory for regular expression error message" );
-	}
+// 	if ( NULL == buffer ) {
+// 		print_error( "Failed to allocate memory for regular expression error message" );
+// 	}
 
-	( void )regerror ( errcode, compiled, buffer, length );
+// 	( void )regerror ( errcode, compiled, buffer, length );
 
-	return buffer;
-}
+// 	return buffer;
+// }
 
 /**
  * Checks path against list of regexps
  *
  */
-int check_regexp(  char* str, struct llist* l ) {
-	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regexp\n", str );
-	if ( l->first ) {
-		l->current = l->first;
+gboolean check_regexp( char* str, GSList *list ) {
+	GSList *current = list;
 
-		while ( l->current ) {
-			if ( DEBUG )fprintf( stderr, "Regex: '%s'\n", l->current->as_string( l->current ) );
-			if ( match( str, l->current->value, NULL, 0 ) == 0 ) {
-				if ( DEBUG )fprintf( stderr, "Match\n" );
-				return 0;
-			}
+	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regex\n", str );
 
-			l->current = l->current->next;
+	while ( NULL != current ) {
+		if ( DEBUG )fprintf( stderr, "Regex: '%s'\n", (char*)current->data );
+
+		if ( g_regex_match_simple ( current->data, str, 0, 0 ) ) {
+			if ( DEBUG )fprintf( stderr, "Match\n" );
+
+			return TRUE;
 		}
 
-		l->current = l->first;
-
-	} else {
-		if ( DEBUG )fprintf( stderr, "Regex list is empty\n" );
+		current = current->next;
 	}
 
 	if ( DEBUG )fprintf( stderr, "No match found\n" );
 
-	return 1;
+	return FALSE;
 }
 
 /**
@@ -1352,7 +1385,7 @@ void end_clock( char *msg ) {
  * Prints out contents of configuration file
  *
  */
-int print_config() {
+// int print_config() {
 	// FILE *stream = fopen( config_name, "r" );
 	// char buffer[ MAX_LINE ];
 
@@ -1372,14 +1405,14 @@ int print_config() {
 	// 	fclose( stream );
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Print in-memory list of package files
  *
  */
-int print_files() {
+// int print_files() {
 	// if ( NULL == files->first ) {
 	// 	printf( "List is empty\n" );
 
@@ -1394,8 +1427,8 @@ int print_files() {
 	// 	files->current = files->first;
 	// }
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Populates static variables with current terminal window sizes

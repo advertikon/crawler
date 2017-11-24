@@ -50,5 +50,6 @@ struct stat *_Lstat( char* );
 gboolean is_dir( char* );
 gboolean is_file( char*);
 void clean_stat_cache( char* );
+t_size filesize( char* );
 
 #endif

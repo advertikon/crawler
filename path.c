@@ -304,3 +304,9 @@ void clean_stat_cache( char* value ) {
 	if ( debug )printf( "Freeing stat cache value %s", (char*)value );
 	g_free( value );
 }
+
+t_size filesize( char *name ) {
+	struct stat *stat_buffer = _Lstat( name );
+
+	return stat_buffer->st_size;
+}
