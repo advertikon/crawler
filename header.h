@@ -30,13 +30,13 @@
 #include "structure.h"
 
 typedef void Sigfunc( int );
-typedef int It_file(  char*, struct stat* );
-typedef int It_dir(  char*, struct stat* );
-typedef int It_error(  char* );
-typedef int (*cb)( void*, void* );
+// typedef int It_file(  char*, struct stat* );
+// typedef int It_dir(  char*, struct stat* );
+// typedef int It_error(  char* );
 
-int usage( void );
-int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
+
+// int usage( void );
+
 int parse_config( char* );
 // int add_to(  char* );
 // int del_from(  char*, struct llist* );
@@ -52,7 +52,7 @@ int abort_config( void );
 // int write_config_section( char*, FILE*, struct llist* );
 void int_handler( int );
 gboolean check_file(  char* );
-// void collide_length(  char*, GSList*, int* );
+void collide_length(  char*, GSList*, int* );
 // gboolean collide_span(  char*,  char* );
 // char* get_regerror( int, regex_t* );
 // int match(  char*,  char*, regmatch_t*, int );
@@ -64,45 +64,45 @@ void end_clock( char* );
 static void set_winsize( void );
 static void sig_winch( int );
 int load_dependencies( void );
-char *ltrim( char*,  char* );
-char *trim( char*,  char* );
-char *rtrim( char*,  char* );
-int is_file(  char* );
-int is_dir(  char* );
-int check_item( char*, struct stat* );
-int check_source( char*, struct stat* );
-int on_iterate_error( char* );
-char* add_cwd( char* );
+// char *ltrim( char*,  char* );
+// char *trim( char*,  char* );
+// char *rtrim( char*,  char* );
+// int is_file(  char* );
+// int is_dir(  char* );
+int check_item( char*, void* );
+int check_source( char*, void* );
+int on_iterate_error( char*, void* );
+// char* add_cwd( char* );
 int make_package( void );
 int run_zip( char* );
 void sig_cld( int );
-int make_dir( char*, mode_t );
+// int make_dir( char*, mode_t );
 int fill_temp_package();
 int make_file( char*, mode_t );
-char *file_name( char* );
-char *dir_name( char* );
+// char *file_name( char* );
+// char *dir_name( char* );
 int fill_translation( FILE*, char* );
 int run_filters( void );
-int fetch_translation( FILE*, struct llist* );
-struct llist* get_matches( const char* );
+int fetch_translation( FILE*, GSList*, GSList*, gboolean );
+// struct llist* get_matches( const char* );
 int init_filters( void );
 int get_version( void );
 char *get_package_dir( void );
-int del_file_cb( char*, struct stat* );
-int del_dir_cb( char*, struct stat* );
-int save_translation( char*, struct llist* );
+int del_file_cb( char*, void* );
+int del_dir_cb( char*, void* );
+int save_translation( char*, GSList* );
 char *get_common_dir( void );
 int make_oc20( void );
-int del_empty_dirs_cb( char*, struct stat* );
+int del_empty_dirs_cb( char*, void* );
 int content_to_oc20( char* );
 int add_version( FILE * );
 int make_vqmod();
 int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
-int set_config_name( void );
+// int set_config_name( void );
 int xml_to_config( char*, xmlNodePtr );
 xmlNodePtr config_to_xml( char*, GSList* );
 int php_lint();
-int php_lint_cb( char*, struct stat* );
+int php_lint_cb( char*, void* );
 
 void destroy( GtkWidget *, gpointer );
 void show_error( char * );
@@ -124,6 +124,9 @@ GSList *text_buffer_to_slist( GtkTextBuffer*, GSList* );
 char *get_package_name( void );
 void delete_config_dialog_show( GtkButton *, gpointer );
 void delete_config_dialog_hide( GtkButton *, gpointer );
+void get_files( void*, void* );
+char *get_code( void );
+int run_filters_cb( char*, void* );
 
 
 #define MAX_LINE 400

@@ -30,6 +30,8 @@
 #define B_CYAN   "\e[1;36m"
 #define B_WHITE  "\e[1;37m"
 
+typedef int (*cb)( char*, void* );
+
 static long posix_version = 0;
 static long xsi_version = 0;
 
@@ -50,6 +52,8 @@ struct stat *_Lstat( char* );
 gboolean is_dir( char* );
 gboolean is_file( char*);
 void clean_stat_cache( char* );
-t_size filesize( char* );
+size_t filesize( char* );
+char *Strcat( char*, ... );
+int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
 
 #endif

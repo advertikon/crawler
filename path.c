@@ -305,8 +305,153 @@ void clean_stat_cache( char* value ) {
 	g_free( value );
 }
 
-t_size filesize( char *name ) {
+/**
+ * Returns size of the file
+ */
+size_t filesize( char *name ) {
 	struct stat *stat_buffer = _Lstat( name );
 
 	return stat_buffer->st_size;
+}
+
+/**
+ * Concatenates arbitrary strings number
+ */
+char *Strcat( char *str, ... ) {
+	char *temp1, *temp2;
+	size_t size;
+	char *ret;
+	char *p;
+
+	va_list args;
+	va_start( args, str );
+
+	size = strlen( str );
+	size_t temp_size = size + 100;
+
+	temp1 = g_malloc0( temp_size + 1 );
+	temp2 = g_malloc( 1 );
+	strncpy( temp1, str, size );
+
+	while ( NULL != ( p = va_arg( args, char* ) ) ) {
+		size += strlen( p );
+
+		if ( size > temp_size ) {
+			temp2 = g_realloc( temp2, temp_size + 1 );
+			strncpy( temp2, temp1, temp_size );
+			temp_size = size + 1000;
+			temp1 = g_realloc( temp1, temp_size + 1 );
+		}
+	}
+
+	ret = g_malloc0( size + 1 );
+	strcpy( ret, temp1 );
+	
+	va_end( args );
+
+	g_free( temp1 );
+	g_free( temp2 );
+
+	return ret;
+}
+
+/**
+ * Iterates over FS structure
+ * Fires callbacks:
+ * - file_c - callback on each found file. Arguments absolute file path, struct stat. If returns
+ *           non-zero status function returns with status 1
+ * - dir_c - callback on each found directory, fires after all callbacks for inner files
+ *           Arguments: directory path (absolute, relative), struct stat. If returns non-zero
+ *           function returns with status 1;
+ * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
+ *           otherwise function returns with status 1
+ */
+int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
+	int debug = 0;
+
+	DIR* dir = NULL;
+	struct dirent* dir_entry = NULL;
+	struct stat *stat_buffer = Lstat( path );
+	gboolean is_error = FALSE;
+	char *dir_to_iterate;
+
+	if ( debug )fprintf( stderr, "Iterate: '%s'\n", path );
+
+	if ( G_DIR_SEPARATOR_S != &path[ 0 ] ) {
+		fprintf( stderr, "Path need to be absolute (%s). In %s:%i\n", path, __FILE__, __LINE__ );
+		is_error = TRUE;
+		goto exit_point;
+	}
+
+	if ( NULL == stat_buffer ) {
+		if ( NULL != err_cb && 0 != err_cb( path, NULL ) ) {
+			exit( 1 );
+		}
+
+		is_error = TRUE;
+		goto exit_point;
+	}
+
+	if ( is_file( path ) ) {
+		if ( debug )fprintf( stderr, "Is file\n" );
+
+		if ( NULL != file_cb && 0 != file_cb( path, NULL ) ) {
+			is_error = TRUE;
+			goto exit_point;
+		}
+
+	} else if ( is_dir( path ) ) {
+		if ( debug )fprintf( stderr, "Is folder\n" );
+
+		if ( NULL == ( dir = opendir( path ) ) ) {
+			fprintf(stderr, "Failed to open folder in %s:%i:%s\n", __FILE__, __LINE__, strerror( errno ) );
+			is_error = TRUE;
+			goto exit_point;
+		}
+
+		if ( debug )fprintf( stderr, "Dir has been entered: %s\n", path );
+
+		errno = 0;
+
+		while ( NULL != ( dir_entry = readdir( dir ) ) ) {
+			if ( dir_entry->d_name[ 0 ] == '.' ) {
+				continue;
+			}
+
+			dir_to_iterate = g_build_filename( path, dir_entry->d_name, NULL ); /* needs to be freed in callee */
+
+			iterate( dir_to_iterate, file_cb, dir_cb, err_cb );
+		}
+
+		// Error while reading directory
+		if ( 0 != errno && NULL == dir_entry ) {
+			fprintf( stderr, "Error while reading directory %s: %s in %s:%i\n", path, strerror( errno ), __FILE__, __LINE__ );
+			is_error = TRUE;
+			goto exit_point;
+		}
+
+		// Run DIR callback after all FILE callbacks
+		if ( NULL != dir_cb && 0 != dir_cb( path, NULL ) ) {
+			return 1;
+		}
+
+		closedir( dir );
+
+	} else {
+		print_error( "%s is not a file nor a directory\n", path );
+		is_error = TRUE;
+		goto exit_point;
+	}
+
+exit_point:
+	g_free( path );
+	g_free( stat_buffer );
+
+	if ( NULL != dir ) g_free( dir );
+
+	if ( is_error ) {
+		return 1;
+	}
+
+	return 0;
 }

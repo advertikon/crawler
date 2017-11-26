@@ -8,8 +8,8 @@ char config_name[ MAX_LINE ] = ".crawler";
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
-char *pckg_name_templ = "%s-%s-%d.%d.%d.ocmod.zip";
-char *pckg_mane_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
+char *pckg_name_templ = "%s-%s-%s.%s.%s.ocmod.zip";
+char *pckg_name_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
 char *lang_prefix_23 = "language/en-gb/";
 char *lang_prefix_20 = "language/english/";
 
@@ -31,18 +31,14 @@ int patch = 0; // Package patch number
 
 size_t path_max_size;
 
-struct llist
-			// *files,
-			*temp,
-			*filters,
-			*admin_t,
-			*catalog_t,
-			*common_t;
-
 GHashTable *config = NULL;
 GSList *filter_names = NULL;
 
-GSList *files;
+// Filters list to path each file through
+GSList *filters = NULL;
+
+// List of package's files
+GSList *files = NULL;
 
 // Lists to store filters temporary during file system iteration to boost up performance
 GSList *include_file_temp;
@@ -93,6 +89,9 @@ GtkDialog *delete_package_confirm;
 GtkButton *button_delete_package_ok;
 GtkButton *button_delete_package_cancel;
 
+// Iterate over FS button
+GtkButton *button_iterate;
+
 // Select package event handler ID
 gulong select_package_handler = 0;
 
@@ -126,27 +125,27 @@ int main( int argc, char **argv ) {
 	g_free( dir );
 	g_free( file );
 
-	/*                     Main window                       */
+	/*********** Main window **********/
     window = GTK_WIDGET( gtk_builder_get_object( UI_builder, "window1" ) );
 
     // Close the program
     g_signal_connect (window, "destroy", G_CALLBACK ( destroy ), NULL);
 
-    /*                    Select package combobox              */
+    /********** Select package combobox **********/
     select_package = GTK_COMBO_BOX_TEXT( gtk_builder_get_object( UI_builder, "select_package" ) );
 
     // Select configuration file action
     select_package_handler = g_signal_connect ( select_package, "changed", G_CALLBACK ( fill_in_config ), NULL);
 
-    /*                    Module code input                     */
+    /********** Module code input **********/
     input_code = GTK_ENTRY( gtk_builder_get_object( UI_builder, "input_code" ) );
  
-    /*                    Version numbers                        */
+    /********* Version numbers **********/
     input_major = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_major" ) );
     input_minor = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_minor" ) );
     input_patch = GTK_SPIN_BUTTON( gtk_builder_get_object( UI_builder, "input_patch" ) );
 
-    /*                    Filter inputs                           */
+    /********* Filter inputs **********/
     buffer_include_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_file" ) );
     buffer_exclude_file   = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_file" ) );
     buffer_include_folder = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_folder" ) );
@@ -154,7 +153,7 @@ int main( int argc, char **argv ) {
     buffer_include_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_include_regex" ) );
     buffer_exclude_regex  = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_exclude_regex" ) );
 
-    /*                     Configuration buttons                   */
+    /********* Configuration buttons **********/
     button_reload_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_reload_config" ) );
     button_save_config   = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_save_config" ) );
     button_delete_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_config" ) );
@@ -168,321 +167,26 @@ int main( int argc, char **argv ) {
     // Delete configuration files click handler
     g_signal_connect ( button_delete_config, "clicked", G_CALLBACK ( delete_config ), NULL);
 
-    /*                      Confirm delete package dialog                     */
+    /******** Confirm delete package dialog ********/
     delete_package_confirm = GTK_DIALOG( gtk_builder_get_object( UI_builder, "delete_package_confirm" ) );
     button_delete_package_ok = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_ok" ) );
     button_delete_package_cancel = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_cancel" ) );
+
+    /********** Configuration buttons ********/
+    button_reload_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_reload_config" ) );
+
+    /********* Iterate button *********/
+    button_iterate = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_iterate" ) );
+
+    // Click button event handler
+    g_signal_connect ( button_iterate, "clicked", G_CALLBACK ( get_files ), NULL);
   
     gtk_widget_show( window );
 
     // Populate select package combobox with data
     get_package_configs();
+    init_filters();
     gtk_main ();
-
-	return 0;
-	// int debug = 0;
-
-	// char line[ MAX_LINE ];
-
-	// if( NULL == getcwd( cwd, path_max_size ) ) {
-	// 	fprintf( stderr, "main: failed to get CWD" );
-	// 	exit( 1 );
-	// }
-
-	// cwd_length = strlen( cwd );
-
-	// int i;
-	// regmatch_t *t_m;
-
-	// code = (char*)malloc( MAX_LINE );
-
-	// if ( NULL == code ) {
-	// 	print_error( "Failed to allocate memory for code package code" );
-	// }
-
-	// memset( code, '\0', MAX_LINE );
-
-	// lang_dir = malloc( path_max_size );
-
-	// if ( NULL == lang_dir ) {
-	// 	print_error( "Failed allocate memory for lang_dir variable" );
-	// }
-
-	// memset( lang_dir, '\0', path_max_size );
-
-	// signal( SIGINT, &int_handler );
-	// signal( SIGWINCH, &sig_winch );
-	// // signal( SIGCLD, &sig_cld );
-
-	// set_winsize();
-
-	// if ( DEBUG || debug ) fprintf( stderr, "Initializing lists....\n" );
-
-	// // include_dir = init_llist();
-	// // exclude_dir = init_llist();
-	// // include_file = init_llist();
-	// // exclude_file = init_llist();
-	// // include_regexp = init_llist();
-	// // exclude_regexp = init_llist();
-	// admin_t = init_llist();
-	// catalog_t = init_llist();
-	// common_t = init_llist();
-	// temp = init_llist();
-	// files = init_llist();
-
-	// parse_args( argv );
-
-	// if ( 1 == get_arg( "code", &code ) ) {
-	// 	fprintf( stderr, "Supply package code name as --code argument\n" );
-	// 	exit( 1 );
-	// }
-
-	// set_config_name();
-
-	// if ( DEBUG || debug ) print_args();
-	// if ( DEBUG || debug ) fprintf( stderr, "Parsing configuration....\n" );
-
-	// // parse_config();
-
-	// if ( DEBUG || debug ) fprintf( stderr, "Configuration has been parsed\n" );
-
-	// while ( 1 ) {
-	// 	if ( 0 == command ) {
-	// 		show_commands();
-	// 	}
-
-	// 	memset( line, '\0', MAX_LINE );
-
-	// 	if( fgets( line, MAX_LINE, stdin ) == NULL && ferror( stdin ) ) {
-	// 		perror( "Failed to read line from STDIN" );
-	// 		return 1;
-	// 	}
-
-	// 	// Trim trailing newline
-	// 	line[ strlen( line ) - 1 ] = '\0';
-
-	// 	if ( strcmp( line, "exit" ) == 0 ) {
-	// 		printf( "Exiting...\n" );
-		
-	// 		break;
-	// 	}
-
-	// 	if ( 0 == strcmp( "show_temp", line ) ) {
-	// 		temp->print( temp );
-	// 		continue;
-	// 	}
-
-	// 	if ( 0 == command ) {
-	// 		switch( atoi( line ) ) {
-	// 		case C_ADD_INCL_FOLDER:
-	// 			if( 0 == start_add( include_dir ) ) {
-	// 				command = C_ADD_INCL_FOLDER;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_INCL_FOLDER:
-	// 			if( 0 == start_del( include_dir ) ) {
-	// 				command = C_DEL_INCL_FOLDER;
-	// 			}
-
-	// 			break;
-	// 		case C_ADD_INCL_FILE:
-	// 			if( 0 == start_add( include_file ) ) {
-	// 				command = C_ADD_INCL_FILE;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_INCL_FILE:
-	// 			if( 0 == start_del( include_file ) ) {
-	// 				command = C_DEL_INCL_FILE;
-	// 			}
-
-	// 			break;
-	// 		case C_ADD_INCL_REGEXP:
-	// 			if( 0 == start_add( include_regexp ) ) {
-	// 				command = C_ADD_INCL_REGEXP;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_INCL_REGEXP:
-	// 			if( 0 == start_del( include_regexp ) ) {
-	// 				command = C_DEL_INCL_REGEXP;
-	// 			}
-
-	// 			break;
-	// 		case C_ADD_EXCL_FOLDER:
-	// 			if( 0 == start_add( exclude_dir ) ) {
-	// 				command = C_ADD_EXCL_FOLDER;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_EXCL_FOLDER:
-	// 			if( 0 == start_del( exclude_dir ) ) {
-	// 				command = C_DEL_EXCL_FOLDER;
-	// 			}
-
-	// 			break;
-	// 		case C_ADD_EXCL_FILE:
-	// 			if( 0 == start_add( exclude_file ) ) {
-	// 				command = C_ADD_EXCL_FILE;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_EXCL_FILE:
-	// 			if( 0 == start_del( exclude_file ) ) {
-	// 				command = C_DEL_EXCL_FILE;
-	// 			}
-
-	// 			break;
-	// 		case C_ADD_EXCL_REGEXP:
-	// 			if( 0 == start_add( exclude_regexp ) ) {
-	// 				command = C_ADD_EXCL_REGEXP;
-	// 			}
-
-	// 			break;
-	// 		case C_DEL_EXCL_REGEXP:
-	// 			if( 0 == start_del( exclude_regexp ) ) {
-	// 				command = C_DEL_EXCL_REGEXP;
-	// 			}
-
-	// 			break;
-	// 		case C_ITERATE:
-	// 			files->empty( files );
-	// 			files_count = 0;
-	// 			total_size = 0;
-	// 			start_clock();
-	// 			iterate( cwd, &check_item, NULL, &on_iterate_error );
-	// 			load_dependencies();
-	// 			end_clock( "Time:" );
-	// 			printf("%d files was selected\n", files_count );
-	// 			printf( "Total size: %ld\n", total_size );
-	// 			break;
-	// 		case C_PRINT_FILES:
-	// 			print_files();
-	// 			break;
-	// 		case C_PRINT_CONFIG:
-	// 			print_config();
-	// 			break;
-	// 		case C_MAKE:
-	// 			make_package();
-	// 			break;
-	// 		case C_SET_NAME:
-	// 			command = C_SET_NAME;
-	// 			printf( "Extension name >> " );
-	// 			break;
-	// 		case C_SET_MAJOR:
-	// 			command = C_SET_MAJOR;
-	// 			printf( "Major number >> " );
-	// 			break;
-	// 		case C_SET_MINOR:
-	// 			command = C_SET_MINOR;
-	// 			printf( "Manor number >> " );
-	// 			break;
-	// 		case C_SET_PATCH:
-	// 			command = C_SET_PATCH;
-	// 			printf( "Patch number >> " );
-	// 			break;
-	// 		default:
-	// 			show_commands();
-	// 			break;
-	// 		}
-
-	// 	} else if ( 0 != command ) {
-	// 		if ( 1 == wait_confirm ) {
-	// 			if ( 0 == strcmp( "y", line ) || 0 == strcmp( "Y", line ) ) {
-	// 				if ( 1 == save_me ) {
-	// 					confirmed_operation();
-	// 				}
-
-	// 				end_operation();
-
-	// 				continue;
-	// 			}
-
-	// 			wait_confirm = 0;
-	// 			save_me = 0;
-	// 			printf( "Does not matter... \n" );
-				
-	// 			continue;
-	// 		}
-
-	// 		if ( 0 == strcmp( "q", line ) || 0 == strcmp( "s", line ) ) {
-	// 			printf( "Are sure (y/n)?: " );
-	// 			wait_confirm = 1;
-
-	// 			if ( 's' == line[ 0 ] ) {
-	// 				save_me = 1;
-	// 			}
-
-	// 			continue;
-	// 		}
-
-	// 		if ( NULL == temp ) {
-	// 			temp = init_llist();
-	// 		}
-
-	// 		switch( command ) {
-	// 		case C_ADD_INCL_FOLDER:
-	// 		case C_ADD_EXCL_FOLDER:
-	// 		case C_ADD_INCL_FILE:
-	// 		case C_ADD_EXCL_FILE:
-	// 		case C_ADD_INCL_REGEXP:
-	// 		case C_ADD_EXCL_REGEXP:
-	// 			add_to( line );
-	// 			break;
-	// 		case C_DEL_INCL_FOLDER:
-	// 			del_from( line, include_dir );
-	// 			break;
-	// 		case C_DEL_INCL_FILE:
-	// 			del_from( line, include_file );
-	// 			break;
-	// 		case C_DEL_INCL_REGEXP:
-	// 			del_from( line, include_regexp );
-	// 			break;
-	// 		case C_DEL_EXCL_FOLDER:
-	// 			del_from( line, exclude_dir );
-	// 			break;
-	// 		case C_DEL_EXCL_FILE:
-	// 			del_from( line, exclude_file );
-	// 			break;
-	// 		case C_DEL_EXCL_REGEXP:
-	// 			del_from( line, exclude_regexp );
-	// 			break;
-	// 		case C_SET_NAME:
-	// 			memset( code, '\0', MAX_LINE );
-	// 			strncpy( code, line, MAX_LINE );
-	// 			command = 0;
-	// 			config_is_dirty = 1;
-	// 			break;
-	// 		case C_SET_MAJOR:
-	// 			major = atoi( line );
-	// 			minor = 0;
-	// 			patch = 0;
-	// 			command = 0;
-	// 			config_is_dirty = 1;
-	// 			break;
-	// 		case C_SET_MINOR:
-	// 			minor = atoi( line );
-	// 			patch = 0;
-	// 			command = 0;
-	// 			config_is_dirty = 1;
-	// 			break;
-	// 		case C_SET_PATCH:
-	// 			patch = atoi( line );
-	// 			command = 0;
-	// 			config_is_dirty = 1;
-	// 			break;
-	// 		default :
-	// 			printf( "Unknown command: %d\n", command );
-	// 			command = 0;
-	// 		}
-
-	// 	} else {
-	// 		show_commands();
-	// 	}
-	// }
-
-	// save_config();
 
 	return 0;
 }
@@ -543,128 +247,33 @@ void show_error( char *message ) {
 	fputs( message, stderr );
 }
 
-int usage() {
-	// printf("%.20s - %s\n", "exit", "exit function" );
-	exit( 0 );
-}
+// int usage() {
+// 	// printf("%.20s - %s\n", "exit", "exit function" );
+// 	exit( 0 );
+// }
 
-void get_files() {
+/**
+ * Fills in files list. Iterate button click event handler
+ */
+void get_files( void* widget, void* data ) {
 	include_file_temp = g_hash_table_lookup( config, "include_file" );
 	exclude_file_temp = g_hash_table_lookup( config, "include_file" );
 	include_folder_temp = g_hash_table_lookup( config, "include_file" );
 	exclude_folder_temp = g_hash_table_lookup( config, "include_file" );
 	include_regex_temp = g_hash_table_lookup( config, "include_file" );
 	exclude_regex_temp = g_hash_table_lookup( config, "include_file" );
+	g_slist_free_full( files, (GDestroyNotify)g_free );
 
-	iterate( g_strdup( cwd ), &check_item, NULL, &on_iterate_error );
-}
+	iterate( g_strdup( cwd ), (void*)&check_item, NULL, (void*)&on_iterate_error );
 
-/**
- * Iterates over FS structure
- * Fires callbacks:
- * - file_c - callback on each found file. Arguments absolute file path, struct stat. If returns
- *           non-zero status function returns with status 1
- * - dir_c - callback on each found directory, fires after all callbacks for inner files
- *           Arguments: directory path (absolute, relative), struct stat. If returns non-zero
- *           function returns with status 1;
- * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
- *           otherwise function returns with status 1
- */
-int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
-	int debug = 0;
+	g_slist_free_full( include_file_temp, (GDestroyNotify)g_free );
+	g_slist_free_full( exclude_file_temp, (GDestroyNotify)g_free );
+	g_slist_free_full( include_folder_temp, (GDestroyNotify)g_free );
+	g_slist_free_full( exclude_folder_temp, (GDestroyNotify)g_free );
+	g_slist_free_full( include_regex_temp, (GDestroyNotify)g_free );
+	g_slist_free_full( exclude_regex_temp, (GDestroyNotify)g_free );
 
-	DIR* dir = NULL;
-	struct dirent* dir_entry = NULL;
-	struct stat *stat_buffer = NULL;
-	gboolean = is_error = FALSE;
-	char *dir_to_iterate;
-
-	if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", path );
-
-	if ( G_DIR_SEPARATOR_S != path[ 0 ] ) {
-		// absolute_path = g_build_filename( cwd, )
-
-		// TODO: handle situation with relative paths, if needed
-		fprintf( stderr, "Path need to be absolute (%s). In %s:%i\n", path, __FILE__, __LINE__ );
-		is_error = TRUE;
-		goto exit_point;
-	}
-
-	struct stat *stat_buffer = Lstat( path );
-
-	if ( NULL == stat_buffer ) {
-		if ( NULL != err_cb && 0 != err_cb( path, NULL ) ) {
-			exit( 1 );
-		}
-
-		is_error = TRUE;
-		goto exit_point;
-	}
-
-	if ( is_file( path ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is file\n" );
-
-		if ( NULL != file_cb && 0 != file_cb( path, NULL ) ) {
-			is_error = TRUE;
-			goto exit_point;
-		}
-
-	} else if ( is_dir( path ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is folder\n" );
-
-		if ( NULL == ( dir = opendir( path ) ) ) {
-			fprintf(stderr, "Failed to open folder in %s:%i:%s\n", __FILE__, __LINE__, strerror( errno ) );
-			is_error = TRUE;
-			goto exit_point;
-		}
-
-		if ( DEBUG || debug )fprintf( stderr, "Dir has been entered: %s\n", path );
-
-		depth++;
-
-		errno = 0;
-
-		while ( NULL != ( dir_entry = readdir( dir ) ) ) {
-			if ( dir_ntry->d_name[ 0 ] == '.' ) {
-				continue;
-			}
-
-			dir_to_iterate = g_build_filename( path, dir_entry->d_name ); /* needs to be freed in callee */
-
-			iterate( dir_to_iterate, file_cb, dir_cb, err_cb );
-		}
-
-		if ( 0 != errno && NULL == item ) {
-			fprintf( stderr, "Error while reading directory %s: %s in %s:%i\n", path, strerror( errno ), __FILE__, __LINE__ );
-			is_error = TRUE;
-			goto exit_point;
-		}
-
-		// Run DIR callback after all FILE callbacks
-		if ( NULL != dir_cb && 0 != dir_cb( path, NULL ) ) {
-			return 1;
-		}
-
-		closedir( dir );
-		depth--;
-
-	} else {
-		print_error( "%s is not a file nor a directory\n", path );
-		is_error = TRUE;
-		goto exit_point;
-	}
-
-exit_point:
-	g_free( path );
-	g_free( stat_buffer );
-
-	if ( NULL != dir ) g_free( dir );
-
-	if ( is_error ) {
-		return 1;
-	}
-
-	return 0;
+	load_dependencies();
 }
 
 /**
@@ -673,10 +282,10 @@ exit_point:
 int check_item( char *name, void* data ) {
 	if ( DEBUG )fprintf( stderr, "Start checking file %s\n", name );
 
-	if ( check_file( name ) ) {
+	if ( check_file( (char*)name ) ) {
 		if ( DEBUG )fprintf( stderr, "Passed check\n" );
 
-		g_slist_append( files, g_strdup( name ) );
+		files = g_slist_append( files, g_strdup( name ) );
 		total_size += filesize( name );
 		files_count++;
 
@@ -689,26 +298,27 @@ int check_item( char *name, void* data ) {
 
 /**
  * Add files from header source section to package files list
- *
  */
-int check_source(  char *name, struct stat* sb ) {
+int check_source( char *name, void *data ) {
 	int debug = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Add source file %s\n", name );
 
-	// Potential source of inaccuracy: some files may be already present in files structure
-	// and on merge such files will be skipped
-	temp->add( &name[ cwd_length  +1 ], name, temp );
-	total_size += sb->st_size;
-	files_count++;
+	// If file doesn't exist already in list - add it
+	if ( -1 != g_slist_index( files, name ) ) {
+		files = g_slist_append( files, name );
+		total_size += filesize( name );
+		files_count++;
+	}
+
+	return 0;
 }
 
 /**
  * Callback for FS iterator
  * Prints error in STDERR end returns status 1
- *
  */
-int on_iterate_error( char *name ) {
+int on_iterate_error( char *name, void *data ) {
 	fprintf( stderr, "%s: %s\n", strerror( errno ), name );
 
 	return 1;
@@ -1155,7 +765,7 @@ gboolean check_file( char *name ) {
 	int max_incl_dir_length = 0;
 	int max_excl_dir_length = 0;
 
-	char *relative_file_name = name[ strlen( cwd ) ];
+	char *relative_file_name = &name[ strlen( cwd ) ];
 	char *relative_folder_name;
 
 	if ( DEBUG )printf( "Relative file name: '%s'\n", relative_file_name );
@@ -1174,10 +784,10 @@ gboolean check_file( char *name ) {
 
 	relative_folder_name = g_path_get_dirname( relative_file_name );
 
-	if ( DEBUG )printf( "Relative folder: '%s'\n" );
+	if ( DEBUG )printf( "Relative folder: '%s'\n", relative_folder_name );
 
 	// If path has folder part
-	if ( '.' != relative_folder_name ) {
+	if ( "." != relative_folder_name ) {
 		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", relative_folder_name );
 
 		collide_length( relative_folder_name, include_folder_temp, &max_incl_dir_length );
@@ -1189,7 +799,7 @@ gboolean check_file( char *name ) {
 			fprintf(
 				stderr,
 				"Included directory max. length: %d, excluded directory max. length: %d\n",
-				max_incl_dir_legth,
+				max_incl_dir_length,
 				max_excl_dir_length
 			);
 		
@@ -1198,7 +808,7 @@ gboolean check_file( char *name ) {
 			return TRUE;
 		}
 
-		if ( max_excl_dir > 0 ) {
+		if ( max_excl_dir_length > 0 ) {
 			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
 			return FALSE;
 		}
@@ -1223,22 +833,22 @@ gboolean check_file( char *name ) {
 /**
  * Returns longest path
  */
-// void collide_length( char *name, GSList *list, int *max ) {
-	// int current_str_len = 0;
-	// *max = 0;
-	// GSList *curret = list;
+void collide_length( char *name, GSList *list, int *max ) {
+	int current_str_len = 0;
+	*max = 0;
+	GSList *current = list;
 
-	// while ( NULL != current ) {
-	// 	current_str_len = strspn( name, current->data );
+	while ( NULL != current ) {
+		current_str_len = strspn( name, current->data );
 
-	// 	// We already have longer match. Skip
-	// 	if ( *max < current_str_len ) {
-	// 		*max = current_str_len;
-	// 	}
+		// We already have longer match. Skip
+		if ( *max < current_str_len ) {
+			*max = current_str_len;
+		}
 
-	// 	current = current->next;
-	// }
-// }
+		current = current->next;
+	}
+}
 
 /**
  * Calculates strings' intersection length
@@ -1471,309 +1081,330 @@ void sig_cld( int signo ) {
 
 /**
  * Loads dependency files form source header sections
- * CHDIR to CWD
- *
  */
 int load_dependencies() {
 	int debug = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Start loading dependencies\n" );
 
-	FILE *f;
-	char line[ path_max_size ];
-	char name[ path_max_size ];
-	int max_line = 100; // Max depth to look at
-	int in_header = 0;
+	FILE *file; // File to search in
+	char *line = g_malloc0( MAX_LINE ); // Line from file
+	int max_lines = 200; // Max depth to look at
+	gboolean in_header = FALSE; // Flag to tell whether we are in script header
 	int c = 0; // Line count
-	char *patt = "\\*\\s+@source\\s+([^*]+)"; // Regex pattern to match source against
-	int reg_len;
-	temp->empty( temp );
-	char t_line[ path_max_size ];
+	char *source_name; // Name of source file got from script header
+	GRegex *regex = g_regex_new( "\\*\\s+@source\\s+([^*]+)", 0, 0, NULL );
+	GMatchInfo *match_info;
+	GSList *current = files;
+	int is_free_match = 0; // Flag to tell if matches_info structure needs to be emptied
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
-		exit( 1 );
-	}
+	while ( current ) {
+		if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", (char*)current->data );
 
-	// Files not empty
-	if ( files->first ) {
-		files->current = files->first;
+		// Look for sources in controller files
+		if ( NULL != strstr( current->data, "/controller/" ) ) {
+			if ( DEBUG || debug )fprintf( stderr, "Is controller\n" );
 
-		while ( files->current ) {
-			if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", files->current->name );
+			if ( NULL == ( file = fopen( current->data, "r" ) ) ) {
+				fprintf( stderr, "Failed to open file '%s' in %s:%i: %s\n", (char*)current->data, __FILE__, __LINE__, strerror( errno ) );
+			}
 
-			// Look for sources in controller files
-			if ( match( files->current->name, "/controller/", NULL, 0 ) == 0 ) {
-				if ( DEBUG || debug )fprintf( stderr, "Is controller\n" );
+			if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", (char*)current->data );
 
-				if ( NULL == ( f = fopen( files->current->value, "r" ) ) ) {
-					print_error( "Failed to open file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) );
+			// Read up to max_line lines
+			while ( NULL != ( fgets( line, MAX_LINE, file ) ) ) {
+				if ( DEBUG || debug )fprintf( stderr, "Line: '%s'", line );
+
+				if ( ++c > max_lines ) {
+					fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_lines, (char*)current->data );
+					exit( 1 );
 				}
 
-				if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", files->current->as_string( files->current ) );
+				line = g_strchug( line ); // Remove leading spaces
 
-				// Read up to max_line lines
-				while ( NULL != ( fgets( line, MAX_LINE, f ) ) ) {
-					if ( DEBUG || debug )fprintf( stderr, "Line: '%s'", line );
-
-					if ( c > max_line ) {
-						fprintf( stderr, "Maximum depth of %d lines reached in file %s\n", max_line, files->current->as_string( files->current ) );
-						goto next;
+				if ( in_header ) {
+					if ( 0 == strncmp( line, "*/", 2 ) ) {
+						if ( DEBUG || debug )fprintf( stderr, "Header closing tag\n" );
+						goto next_file;
 					}
 
-					if ( in_header ) {
-						trim( line, NULL );
+					is_free_match = 1;
 
-						if ( DEBUG || debug )fprintf( stderr, "After trim: '%s'\n", line );
+					if ( g_regex_match ( regex, line, 0, &match_info ) ) {
+						source_name = g_match_info_fetch( match_info, 1 ); // Will be freed in iterate function
 
-						if ( 0 == strncmp( line, "*/", 2 ) ) {
-							if ( DEBUG || debug )fprintf( stderr, "Header closing tag\n" );
-							goto next;
-						}
+						if ( NULL != source_name ) {
+							if ( DEBUG )printf( "Found source: '%s'\n", source_name );
+							iterate( source_name, &check_source, NULL, &on_iterate_error ); // Add to files list
 
-						if ( 0 == match( line, patt, m, 0 ) ) {
-							if ( -1 != m[ 1 ].rm_so ) {
-								memset( t_line, '\0', path_max_size );
-								reg_len = m[ 1 ].rm_eo - m[ 1 ].rm_so;
-								strncpy( t_line, &line[ m[ 1 ].rm_so ], reg_len );
-
-								if ( DEBUG || debug )fprintf( stderr, "Got source: '%s'\n", t_line );
-
-								iterate( t_line, &check_source, NULL, &on_iterate_error );
-
-							} else {
-								fprintf( stderr, "Error while matching string '%s' against regex '%s'\n", line, patt );
-								exit( 1 );
-							}
-						}
-
-					} else {
-						if ( 0 == strncmp( ltrim( line, NULL ), "/**", 3 ) ) {
-							if ( DEBUG || debug )fprintf( stderr, "Header opening tag\n" );
-							in_header = 1;
-							continue;
+						} else {
+							fprintf( stderr, "Failed to fetch source name from string '%s'\n", line );
+							exit( 1 );
 						}
 					}
 
-					c++;
+				} else {
+					if ( 0 == strncmp( line, "/**", 3 ) ) {
+						if ( DEBUG || debug )fprintf( stderr, "Header opening tag\n" );
+						in_header = TRUE;
+						continue;
+					}
 				}
-
-				if ( ferror( f ) ) {
-					print_error( "Failed to read file '%s' for fetching dependencies: %s\n", files->current->name, strerror( errno ) ); 
-				}
-
-			next:
-				fclose( f );
-				in_header = 0;
 			}
 
-			if ( DEBUG || debug ) {
-				fprintf( stderr, "Next loop\n" );
-				fprintf( stderr, "Next item: %p\n", files->current->next );
+			if ( ferror( file ) ) {
+				fprintf(
+					stderr,
+					"Failed to read file '%s' fetching dependencies in %s: %i: %s\n",
+					(char*)current->data,
+					__FILE__,
+					__LINE__, 
+					strerror( errno )
+				);
+				exit( 1 );
 			}
 
-			files->current = files->current->next;
+		next_file:
+			fclose( file );
+			in_header = FALSE;
 		}
 
-		files->merge( temp, files );
+		if ( DEBUG || debug ) {
+			fprintf( stderr, "Next loop\n" );
+		}
 
-	} else {
-		if ( DEBUG || debug )fprintf( stderr, "Files list is empty\n" );
+		current = current->next;
 	}
+
+	if ( is_free_match )
+		g_match_info_free (match_info);
+	g_free( line );
+	g_regex_unref (regex);
 }
 
 /**
  * Trims the string. Default behavior - trim whitespaces
  *
  */
-char *trim( char *str,  char *ch ) {
-	return ltrim( rtrim( str, ch ), ch );
-}
+// char *trim( char *str,  char *ch ) {
+// 	return ltrim( rtrim( str, ch ), ch );
+// }
 
 /**
  * Trims left part of the string. Default behavior - trim whitespaces
  *
  */
-char *ltrim( char *str,  char *ch ) {
-	int len = strlen( str );
-	int ch_len = 0;
-	int i = 0;
-	int y = 0;
-	int flag = 1;
-	char *t_str;
+// char *ltrim( char *str,  char *ch ) {
+	// int len = strlen( str );
+	// int ch_len = 0;
+	// int i = 0;
+	// int y = 0;
+	// int flag = 1;
+	// char *t_str;
 
-	if ( IS_EMPTY( str ) )return str;
+	// if ( IS_EMPTY( str ) )return str;
 
-	if ( NULL != ch ) {
-		ch_len = strlen( ch );
-	}
+	// if ( NULL != ch ) {
+	// 	ch_len = strlen( ch );
+	// }
 
-	for( i = 0; i < len && flag; i++ ) {
-		flag = 0;
+	// for( i = 0; i < len && flag; i++ ) {
+	// 	flag = 0;
 
-		if ( NULL == ch ) {
-			if ( str[ i ] <= ' ' ) {
-				flag = 1;
-			}
+	// 	if ( NULL == ch ) {
+	// 		if ( str[ i ] <= ' ' ) {
+	// 			flag = 1;
+	// 		}
 
-		} else {
-			for ( y = 0; y < ch_len; y++ ) {
-				if ( str[ i ] == ch[ y ] ) {
-					flag = 1;
-					break;
-				}
-			}
-		}
-	}
+	// 	} else {
+	// 		for ( y = 0; y < ch_len; y++ ) {
+	// 			if ( str[ i ] == ch[ y ] ) {
+	// 				flag = 1;
+	// 				break;
+	// 			}
+	// 		}
+	// 	}
+	// }
 
-	i--;
-	t_str = malloc( len - i + 1 );
+	// i--;
+	// t_str = malloc( len - i + 1 );
 
-	if ( NULL == t_str ) {
-		print_error( "Failed to allocate memory for temp string in ltrim function\n" );
-	}
+	// if ( NULL == t_str ) {
+	// 	print_error( "Failed to allocate memory for temp string in ltrim function\n" );
+	// }
 
-	memset( t_str, '\0', len - i + 1 );
-	strncpy( t_str, &str[ i ], len - i );
-	strncpy( str, t_str, len - 1 + 1 );
-	free( t_str );
+	// memset( t_str, '\0', len - i + 1 );
+	// strncpy( t_str, &str[ i ], len - i );
+	// strncpy( str, t_str, len - 1 + 1 );
+	// free( t_str );
 
-	return str;
-}
+// 	return str;
+// }
 
 /**
  * Trims right part of the string. Default behavior - trim whitespaces
  *
  */
-char *rtrim( char *str,  char *ch ) {
-	int len = strlen( str );
-	int ch_len = 0;
-	int i = 0;
-	int y = 0;
-	int flag = 1;
-	char *p;
+// char *rtrim( char *str,  char *ch ) {
+	// int len = strlen( str );
+	// int ch_len = 0;
+	// int i = 0;
+	// int y = 0;
+	// int flag = 1;
+	// char *p;
 
-	if ( IS_EMPTY( str ) )return str;
+	// if ( IS_EMPTY( str ) )return str;
 
-	if ( NULL != ch ) {
-		ch_len = strlen( ch );
-	}
+	// if ( NULL != ch ) {
+	// 	ch_len = strlen( ch );
+	// }
 
-	for( p = &str[ len -1 ]; len >= 0 && flag; len--, p-- ) {
-		flag = 0;
+	// for( p = &str[ len -1 ]; len >= 0 && flag; len--, p-- ) {
+	// 	flag = 0;
 
-		if ( NULL == ch ) {
-			if ( *p <= ' ' ) {
-				flag = 1;
-			}
+	// 	if ( NULL == ch ) {
+	// 		if ( *p <= ' ' ) {
+	// 			flag = 1;
+	// 		}
 
-		} else {
-			for ( y = 0; y < ch_len; y++ ) {
-				if ( *p == ch[ y ] ) {
-					flag = 1;
-					break;
-				}
-			}
-		}
-	}
+	// 	} else {
+	// 		for ( y = 0; y < ch_len; y++ ) {
+	// 			if ( *p == ch[ y ] ) {
+	// 				flag = 1;
+	// 				break;
+	// 			}
+	// 		}
+	// 	}
+	// }
 
-	*( p + 2 ) = '\0';
+	// *( p + 2 ) = '\0';
 
-	return str;
-}
+// 	return str;
+// }
 
 /**
  * Checks if entry is a regular file
  *
  */
-int is_file(  char *name ) {
-	struct stat stat_buffer;
+// int is_file(  char *name ) {
+// 	struct stat stat_buffer;
 
-	if ( lstat( name, &stat_buffer ) < 0 ) {
-		return 0;
-	}
+// 	if ( lstat( name, &stat_buffer ) < 0 ) {
+// 		return 0;
+// 	}
 
-	return  S_ISREG( stat_buffer.st_mode );
-}
+// 	return  S_ISREG( stat_buffer.st_mode );
+// }
 
 /**
  * Checks if an entry is a directory
  *
  */
-int is_dir(  char *name ) {
-	struct stat stat_buffer;
+// int is_dir(  char *name ) {
+// 	struct stat stat_buffer;
 
-	if ( lstat( name, &stat_buffer ) < 0 ) {
-		return 0;
-	}
+// 	if ( lstat( name, &stat_buffer ) < 0 ) {
+// 		return 0;
+// 	}
 
-	return  S_ISDIR( stat_buffer.st_mode );
-}
+// 	return  S_ISDIR( stat_buffer.st_mode );
+// }
 
 /**
  * Prepends CWD to the path
  *
  */
-char* add_cwd( char* path ) {
-	char t[ path_max_size ];
-	// memset( t, '\0', path_max_size );
-	strcpy( t, cwd );
-	strcat( t, "/" );
-	strcat( t, path );
-	strcpy( path, t );
+// char* add_cwd( char* path ) {
+// 	char t[ path_max_size ];
+// 	// memset( t, '\0', path_max_size );
+// 	strcpy( t, cwd );
+// 	strcat( t, "/" );
+// 	strcat( t, path );
+// 	strcpy( path, t );
 
-	return path;
-}
+// 	return path;
+// }
 
 /**
  * Makes package
- * CHDIR to CWD
  */
 int make_package() { 
 	int s;
-	char u_folder[ path_max_size ];
-	char pckg_name[ path_max_size ];
+	char *upload_path = NULL;
+	char *pckg_name;
 	char *pckg_dir;
 	char version[ VERSION_SIZE ];
+	char *major, *minor, *patch;
+	GSList *list_major, *list_minor, *list_patch;
 
-	if ( NULL == files->first ) {
+	int status = 0;
+
+	GSList *code;
+
+	if ( 0 == g_slist_length( files ) ) {
 		fprintf( stderr, "Files list is empty. Nothing to process\n" );
-		return 1;
+		status = 1;
+		goto exit_point;
 	}
 
-	if ( '\0' == code[ 0 ] ) {
-		fprintf( stderr, "Extension name is mandatory\n" );
-		return 1;
-	}
+	update_config_from_view();
+	code = g_hash_table_lookup( config, "code" );
+	list_major = g_hash_table_lookup( config, "major" );
+	list_minor = g_hash_table_lookup( config, "minor" );
+	list_patch = g_hash_table_lookup( config, "patch" );
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
-		exit( 1 );
-	}
+	g_return_val_if_fail( code != NULL, 1 );
+	g_return_val_if_fail( list_major != NULL, 1 );
+	g_return_val_if_fail( list_minor != NULL, 1 );
+	g_return_val_if_fail( list_patch != NULL, 1 );
 
-	memset( pckg_name, '\0', path_max_size );
-	memset( version, '\0', VERSION_SIZE );
+	major = list_major->data;
+	minor = list_minor->data;
+	patch = list_patch->data;
+
+	if ( NULL == code ) {
+		fprintf( stderr, "Extension's code is mandatory\n" );
+		status = 1;
+		goto exit_point;
+	}
 
 	if ( 0 != get_version() ) {
-		return 1;
+		status = 1;
+		goto exit_point;
 	}
 
 	// Directory to store packages in
 	pckg_dir = get_package_dir();
 
-	if ( make_dir( pckg_dir, 0775 ) < 0 ) {
-		fprintf( stderr, "make_package: Failed to create folder '%s': %s\n", pckg_dir, strerror( errno ) );
-		exit( 1 );
+	if ( g_mkdir_with_parents( pckg_dir, 0775 ) < 0 ) {
+		fprintf(
+			stderr,
+			"make_package: Failed to create folder '%s in %s:%i': %s\n",
+			pckg_dir,
+			__FILE__,
+			__LINE__,
+			strerror( errno )
+		);
+
+		status = 1;
+		goto exit_point;
 	}
 
 	// Upload folder of temporary package structure
-	memset( u_folder, '\0', path_max_size );
-	strcpy( u_folder, pckg_tmp_dir );
-	strcat( u_folder, upload_folder );
+	upload_path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
 
-	if ( ( s = make_dir( u_folder, S_IRWXU | S_IRWXG | S_IRWXO ) ) < 0 ) {
-		fprintf( stderr, "make_package: Failed to create folder '%s': %s\n", u_folder, strerror( errno ) );
-		exit( 1 );
+	if ( g_mkdir_with_parents( upload_path, 0775 ) < 0 ) {
+		fprintf(
+			stderr,
+			"make_package: Failed to create folder '%s' in %s:%i: %s\n",
+			upload_folder,
+			__FILE__,
+			__LINE__,
+			strerror( errno )
+		);
+
+		status = 1;
+		goto exit_point;
 	}
 
 	start_clock();
@@ -1789,54 +1420,62 @@ int make_package() {
 	end_clock( "Filters" );
 
 	start_clock();
-	save_translation( "admin", admin_t );
-	end_clock( "Translation admin" );
-
-	start_clock();
-	save_translation( "catalog", catalog_t );
-	end_clock( "Translation catalog" );
-
-	start_clock();
 	php_lint();
 	end_clock( "php lint" );
 
-	sprintf( pckg_name, pckg_name_templ, code, "OC23", major, minor, patch );
+	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC23", major, minor, patch );
 	run_zip( pckg_name );
 
 	make_oc20();
-	sprintf( pckg_name, pckg_name_templ, code, "OC20", major, minor, patch );
+	g_free( pckg_name );
+	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC2o", major, minor, patch );
 	run_zip( pckg_name );
 
-	free( pckg_dir );
+	fprintf( stderr, "Package was saved under version: %s.%s.%s\n", major, minor, patch );
 
-	fprintf( stderr, "Package was saved under version: %d.%d.%d\n", major, minor, patch );
+exit_point:
+	g_free( pckg_dir );
+	if ( NULL != upload_path ) g_free( upload_path );
+	if ( NULL != pckg_name ) g_free( pckg_name );
 
-	return 0;
+	return status;
 }
 
 /**
  * Returns path to folder where zipped packages stored with respect to package name
- *
  */
 char *get_package_dir() {
-	char *pckg_dir = (char*)malloc( path_max_size );
+	char *code = get_code();
+	char *pckg_dir = NULL;
 
-	if ( NULL == pckg_dir ) {
-		print_error( "get_package_dir: failed to allocate memory" );
+	if ( NULL == code ) {
+		fprintf( stderr, "Failed to fetch package code name in %s:%i\n", __FILE__, __LINE__ );
+		return NULL;
 	}
 
-	memset( pckg_dir, '\0', path_max_size );
-	strcpy( pckg_dir, crawler_storage_dir );
-	strcat( pckg_dir, code );
-	strcat( pckg_dir, "/" );
+	pckg_dir = g_build_filename( cwd, crawler_storage_dir, code, NULL );
+	g_free( code );
 
 	return pckg_dir;
 }
 
 /**
+ * Fetches package code name from configuration. Need to be freed
+ */
+char *get_code() {
+	GSList *list = g_hash_table_lookup( config, "code" );
+
+	if ( NULL == list ) {
+		fprintf( stderr, "Code name is mussing from configuration in %s:%i\n", __FILE__, __LINE__ );
+		return NULL;
+	}
+
+	return g_strdup( list->data );
+}
+
+/**
  * Get next version numbers for the package. Gets values form the config and checks them against
  * saved packages
- *
  */
 int get_version() {
 	int debug = 0;
@@ -1849,13 +1488,18 @@ int get_version() {
 	int t_minor = 0;
 	int t_patch = 0;
 
-	int is_empty_dir = 1;
+	gboolean is_empty_dir = TRUE;
 
-	char regex[ MAX_LINE ];
+	char regex_pattern[ MAX_LINE ];
 	char *pckg_dir;
 	char *temp;
 
-	struct llist *matches;
+	GRegex *regex;
+	GMatchInfo *match_info;
+
+	GSList *major = g_hash_table_lookup( config, "major" );
+	GSList *minor = g_hash_table_lookup( config, "minor" );
+	GSList *patch = g_hash_table_lookup( config, "patch" );
 
 	DIR *dir;
 	struct dirent *entry;
@@ -1863,97 +1507,112 @@ int get_version() {
 	pckg_dir = get_package_dir();
 
 	if ( NULL != ( dir = opendir( pckg_dir ) ) ) {
-		sprintf( regex, pckg_mane_regex, code );
+		sprintf( regex_pattern, pckg_name_regex, code );
+		regex = g_regex_new( regex_pattern, 0, 0, NULL );
 
 		while ( NULL != ( entry = readdir( dir ) ) ) {
 			if ( entry->d_name[ 0 ] == '.' ) continue;
 
 			if ( DEBUG || debug ) fprintf( stderr, "Processing file '%s'\n", entry->d_name );
-			if ( DEBUG || debug ) fprintf( stderr, "Regex '%s'\n", regex );
+			if ( DEBUG || debug ) fprintf( stderr, "Regex '%s'\n", regex_pattern );
 
-			if ( 0 == match( entry->d_name, regex, m, 0 ) ) {
+			if ( g_regex_match( regex, entry->d_name, 0, &match_info ) ) {
 				if ( DEBUG || debug ) fprintf( stderr, "Match\n" );
 
-				is_empty_dir = 0;
-
-				matches = get_matches( entry->d_name );
+				is_empty_dir = FALSE;
 
 				if ( DEBUG || debug ) {
-					temp = matches->fetch( "0", matches );
+					temp = g_match_info_fetch( match_info, 0 );
+
 					if ( NULL != temp ) {
 						fprintf( stderr, "Full match: '%s'\n", temp );
-						free( temp );
+						g_free( temp );
 					}
 				}
 
-				temp = matches->fetch( "1", matches );
+				temp = g_match_info_fetch( match_info, 1 );
 
 				if ( NULL != temp ) {
 					t_major = atoi( temp );
-					free( temp );
+					g_free( temp );
 				}
 
-				temp = matches->fetch( "2", matches );
+				temp = g_match_info_fetch( match_info, 2 );
 
 				if ( NULL != temp ) {
 					t_minor = atoi( temp );
-					free( temp );
+					g_free( temp );
 				}
 
-				temp = matches->fetch( "3", matches );
+				temp = g_match_info_fetch( match_info, 3 );
 
 				if ( NULL != temp ) {
 					t_patch = atoi( temp );
-					free( temp );
+					g_free( temp );
 				}
 
 				if ( DEBUG || debug ) fprintf( stderr, "Version numbers found: %d.%d.%d\n", t_major, t_minor, t_patch );
 
+				// Major number of current version is greater then previous
 				if ( t_major > f_major ) {
 					f_major = t_major;
 					f_minor = t_minor;
 					f_patch = t_patch;
 
+				// Major numbers are equal, minor number of current version is greater them previous
 				} else if ( t_major == f_major && t_minor > f_minor ) {
 					f_minor = t_minor;
 					f_patch = t_patch;
 
+				// Patch number
 				} else if ( t_major == f_major && t_minor == f_minor && t_patch > f_patch ) {
 					f_patch = t_patch;
 				}
 
-				free( matches );
+				g_match_info_free( match_info );
 			}
 		}
 
-		if ( major == f_major && minor == f_minor && patch == f_patch && 0 == is_empty_dir) {
+		// Current configuration version equals the latest package version - increment patch number
+		if ( atoi( major->data ) == f_major && atoi( minor->data ) == f_minor && atoi( patch->data ) == f_patch && !is_empty_dir) {
 			if ( DEBUG || debug ) fprintf( stderr, "Patch number was automatically incremented\n" );
 
-			patch++;
-			config_is_dirty = 1;
+			g_free( patch->data );
+			patch->data = g_strdup_printf( "%i", ++f_patch );
+			update_config_view();
 		}
 
-	} else if ( DEBUG || debug ) {
+		g_free( pckg_dir );
+		g_regex_unref( regex );
+
+	} else {
 		fprintf( stderr, "Package directory '%s' doesn't exist\n", pckg_dir );
+		exit( 1 );
 	}
 
 	if ( DEBUG || debug ) fprintf( stderr, "Version: %d.%d.%d\n", f_major, f_minor, f_patch );
 
 	// Patch number may be equal in case of first release, version will be 0.0.0
-	if ( major <= f_major && minor <= f_minor && patch < f_patch ) {
-		fprintf( stderr, "Can not create package with version (%d.%d.%d) that is less then existing one(%d.%d.%d)\n", major, minor, patch, f_major, f_minor, f_patch );
+	if ( atoi( major->data ) <= f_major && atoi( minor->data ) <= f_minor && atoi( patch->data ) < f_patch ) {
+		fprintf(
+			stderr,
+			"Can not create package with version (%s.%s.%s) which is less then existing one(%d.%d.%d)\n",
+			(char*)major->data,
+			(char*)minor->data,
+			(char*)patch->data,
+			f_major,
+			f_minor,
+			f_patch
+		);
 
 		return 1;
 	}
-
-	free( pckg_dir );
 
 	return 0;
 }
 
 /**
  * Spawns ZIP to make zipped package
- *
  */
 int run_zip( char *package_name ) {
 	int debug = 0;
@@ -1980,7 +1639,7 @@ int run_zip( char *package_name ) {
 		return 0;
 	}
 
-	strcpy( src_path, pckg_tmp_dir );
+	// strcpy( src_path, pckg_tmp_dir );
 
 	if ( 0 != chdir( cwd ) ) {
 		fprintf( stderr, "run_zip: failed to change working directory to '%s': %s", cwd, strerror( errno ) );
@@ -1998,6 +1657,9 @@ int run_zip( char *package_name ) {
 	}
 
 	path = get_package_dir();
+	memset( src_path, 0, path_max_size );
+	strncpy( src_path, path, path_max_size );
+	g_free( path );
 	strcat( path, package_name );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Creating ZIP archive... '%s'\n", path );
@@ -2013,68 +1675,68 @@ int run_zip( char *package_name ) {
  * Set errno as mkdir doest it
  * returns 0 on success -1 on error
  */
-int make_dir( char *path, mode_t mode ) {
-	int debug = 0;
+// int make_dir( char *path, mode_t mode ) {
+// 	int debug = 0;
 
-	if ( DEBUG || debug ) fprintf( stderr, "Making directory '%s'...\n", path );
+// 	if ( DEBUG || debug ) fprintf( stderr, "Making directory '%s'...\n", path );
 
-	char t_path[ path_max_size ];
-	char t_cwd[ path_max_size ];
-	char *pos, *cur_pos;
-	char part[ path_max_size ];
+// 	char t_path[ path_max_size ];
+// 	char t_cwd[ path_max_size ];
+// 	char *pos, *cur_pos;
+// 	char part[ path_max_size ];
 
-	int status = 0;
+// 	int status = 0;
 
 	// CWD
-	memset( t_cwd, '\0', path_max_size );
-	getcwd( t_cwd, path_max_size );
+// 	memset( t_cwd, '\0', path_max_size );
+// 	getcwd( t_cwd, path_max_size );
 
-	if ( '/' == path[ 0 ] ) {
-		chdir( "/" );
-	}
+// 	if ( '/' == path[ 0 ] ) {
+// 		chdir( "/" );
+// 	}
 
-	// Copy of path name without leading and railing slashes
-	memset( t_path, '\0', path_max_size );
-	strncpy( t_path, path, path_max_size );
-	trim( t_path, "/" );
+// 	// Copy of path name without leading and railing slashes
+// 	memset( t_path, '\0', path_max_size );
+// 	strncpy( t_path, path, path_max_size );
+// 	trim( t_path, "/" );
 
-	cur_pos = t_path;
+// 	cur_pos = t_path;
 
-	if ( DEBUG || debug ) printf( "Makedir: Input folder: %s\n", t_path );
+// 	if ( DEBUG || debug ) printf( "Makedir: Input folder: %s\n", t_path );
 
-	// Iterate over the path till we still have slash in it
-	while ( NULL != ( pos = strchr( cur_pos, '/' ) ) ) {
-		memset( part, '\0', path_max_size );
-		strncpy( part, cur_pos, pos - cur_pos );
+// 	// Iterate over the path till we still have slash in it
+// 	while ( NULL != ( pos = strchr( cur_pos, '/' ) ) ) {
+// 		memset( part, '\0', path_max_size );
+// 		strncpy( part, cur_pos, pos - cur_pos );
 
-		if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
+// 		if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
 
-		if( ( status = mkdir( part, mode ) ) < 0 && errno != EEXIST ) {
-			goto out;
-		}
+// 		if( ( status = mkdir( part, mode ) ) < 0 && errno != EEXIST ) {
+// 			goto out;
+// 		}
 
-		cur_pos = ++pos;
+// 		cur_pos = ++pos;
 
-		// Chdir into newly created directory to create next directory relative to it
-		chdir( part );
-	}
+// 		// Chdir into newly created directory to create next directory relative to it
+// 		chdir( part );
+// 	}
 
-	// Last part (or the only one)
-	memset( part, '\0', path_max_size );
-	strncpy( part, cur_pos, &t_path[ strlen( t_path ) ] - cur_pos );
+// 	// Last part (or the only one)
+// 	memset( part, '\0', path_max_size );
+// 	strncpy( part, cur_pos, &t_path[ strlen( t_path ) ] - cur_pos );
 
-	if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
+// 	if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
 
-	if( ( status = mkdir( part, mode ) ) < 0 && errno == EEXIST ) {
-		status = 0;
-		errno = 0;
-	}
+// 	if( ( status = mkdir( part, mode ) ) < 0 && errno == EEXIST ) {
+// 		status = 0;
+// 		errno = 0;
+// 	}
 
-out:
-	chdir( t_cwd );
+// out:
+// 	chdir( t_cwd );
 
-	return status;
-}
+// 	return status;
+// }
 
 /**
  * Fills in temporary package structure before ZIPping
@@ -2083,76 +1745,91 @@ out:
 int fill_temp_package() {
 	int debug = 0;
 
-	int src, dest, r_count;
+	int r_count;
+	int status = 0;
+	int dest = -1;
+	int src = -1;
 
-	char path[ path_max_size ];
+	char *path;
+	char *folder;
 	char buffer[ BUFF_SIZE ];
-	char copy[ path_max_size ];
+	char *copy;
 	char readme_file_name[ MAX_LINE ];
 	int is_copy = 0;
+	char *file_name;
 
-	struct stat sb;
+	GSList *current = files;
 
-	memset( copy, '\0', path_max_size );
-	memset( readme_file_name, '\0', MAX_LINE );
+	struct stat *sb = NULL;
+
+	// memset( copy, '\0', path_max_size );
+	// memset( readme_file_name, '\0', MAX_LINE );
 
 	strcpy( readme_file_name, code );
 	strcat( readme_file_name, "_readme" );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files..." );
 
-	iterate( pckg_tmp_dir, del_file_cb, del_dir_cb, on_iterate_error );
+	// Clean temporary folder
+	folder = g_build_filename( cwd, pckg_tmp_dir, NULL );
+	iterate( folder, del_file_cb, del_dir_cb, on_iterate_error );
+	g_free( folder );
 
-	files->current = files->first;
+	while( NULL != current ) {
+		file_name = (char*)current->data;
 
-	while( files->current ) {
-		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", files->current->name );
+		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", (char*)current->data );
 
 		// Get file mode to be able to preserve it
 		// TODO: directories in filename will inherit permissions as well
-		if ( lstat( files->current->name, &sb ) < 0 ) {
-			fprintf( stderr, "Failed to stat file '%s': %s\n", files->current->name, strerror( errno ) );
-			return 1;
+		if ( NULL == ( sb = Lstat( current->data ) ) ) {
+			status = 1;
+			goto exit_point;
 		}
 
-		if ( ( src = open( files->current->name, O_RDONLY  ) ) < 0 ) {
-			fprintf( stderr, "fill_temp_package: Failed to open file '%s': %s\n", files->current->name, strerror( errno ) );
-			return 1;
+		if ( ( src = open( current->data, O_RDONLY  ) ) < 0 ) {
+			fprintf(
+				stderr,
+				"fill_temp_package: Failed to open file '%s' in %s:%i: %s\n",
+				(char*)current->data,
+				__FILE__,
+				__LINE__,
+				strerror( errno )
+			);
+
+			status = 1;
+			goto exit_point;
 		}
 
-		if ( DEBUG || debug )fprintf( stderr, "Open file '%s'\n", files->current->name );
-
-		memset( path, '\0', path_max_size );
-		strcpy( path, pckg_tmp_dir );
+		if ( DEBUG || debug )fprintf( stderr, "Open file '%s'\n", (char*)current->data );
 
 		// Place OCMOD in package root
-		if ( 0 == strcmp( ".ocmod.xml", &files->current->name[ strlen( files->current->name ) - 10 ] ) ) {
-			if ( DEBUG || debug )fprintf( stderr, "OCMOD file detected '%s'\n", files->current->name );
+		if ( 0 == strcmp( ".ocmod.xml", &file_name[ strlen( file_name ) - 10 ] ) ) {
+			if ( DEBUG || debug )fprintf( stderr, "OCMOD file found '%s'\n", (char*)current->data );
 
 			// Create OCMOD which need to be installed via Extension Installer
-			strcpy( copy, path );
-			strcat( copy, "install.xml" );
+			copy = g_build_filename( cwd, pckg_tmp_dir, "install.xml", NULL );
 
 			// Create OCMOD which can be installed directly
-			strcat( path, strrchr( files->current->name, '/' ) );
+			path = g_build_filename( cwd, pckg_tmp_dir, strrchr( current->data, '/' ), NULL );
 
 		// Place README file in the package root
-		} else if ( strcmp( files->current->name, readme_file_name ) == 0 ) {
-			if ( DEBUG || debug ) fprintf( stderr, "Readme file found: '%s'\n", files->current->name );
+		} else if ( strcmp( current->data, readme_file_name ) == 0 ) {
+			if ( DEBUG || debug ) fprintf( stderr, "Readme file found: '%s'\n", (char*)current->data );
 
-			strcat( path, "README.TXT" );
+			path = g_build_filename( cwd, pckg_tmp_dir, "README.TXT", NULL );
 
 		} else {
-			strcat( path, upload_folder );
-			strcat( path, files->current->name );
+			path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, current->data, NULL );
 		}
 
 	copy:
 		if ( DEBUG || debug )fprintf( stderr, "Creating file '%s'\n", path );
 
-		if ( ( dest = make_file( path, sb.st_mode ) ) < 0 ) {
+		if ( ( dest = make_file( path, sb->st_mode ) ) < 0 ) {
 			fprintf( stderr, "fill_temp_package: Failed to save file '%s': %s\n", path, strerror( errno ) );
-			return 1;
+			status = 1;
+			goto exit_point;
 		}
 
 		if ( DEBUG || debug )fprintf( stderr, "File '%s' created\n", path );
@@ -2160,20 +1837,24 @@ int fill_temp_package() {
 		while ( ( r_count = read( src, buffer, BUFF_SIZE ) ) > 0 ) {
 			if ( -1 == write( dest, buffer, r_count ) ) {
 				fprintf( stderr, "fill_temp_package: write file error: %s", strerror( errno ) );
-				return -1;
+				status = 1;
+				goto exit_point;
 			}
 		}
 
 		if ( -1 == r_count ) {
 			fprintf( stderr, "fill_temp_package: read file error: %s", strerror( errno ) );
-			exit( 1 );
+			status = 1;
+			goto exit_point;
 		}
 
 		close( dest );
+		dest = -1;
 
-		if ( strlen( copy ) > 0 ) {
-			strcpy( path, copy );
-			memset( copy, '\0', path_max_size );
+		if ( NULL != copy ) {
+			g_free( path );
+			path = copy;
+			copy = NULL;
 
 			if ( lseek( src, 0, SEEK_SET ) == -1 ) {
 				print_error( "fill_temp_package: Failed to rewind source file" );
@@ -2183,9 +1864,17 @@ int fill_temp_package() {
 		}
 
 		close( src );
+		src = -1;
 
-		files->current = files->current->next;
+		current = current->next;
 	}
+
+exit_point:
+	if ( NULL != sb )g_free( sb );
+	if ( NULL != copy )g_free( copy );
+	if ( NULL != path )g_free( path );
+	if ( dest > -1 )close( dest );
+	if ( src > -1 )close( src );
 
 	return 0;
 }
@@ -2202,21 +1891,23 @@ int make_file( char *name, mode_t mode ) {
 
 	if ( DEBUG || debug )fprintf( stderr, "Creating file '%s' with mode %o\n", name, mode );
 
-	if ( ( fd = creat( name, mode ) ) < 0 &&  ENOENT == errno ) {
-		errno = 0;
+	d_name = g_path_get_dirname( name );
 
-		if ( DEBUG || debug )fprintf( stderr, "Directories structure doesn't exist - creating structure\n" );
+	if ( "." != d_name ) {
+		if( -1 == g_mkdir_with_parents( d_name, mode ) ) {
+			fprintf( stderr, "Failed to create folder '%s' in %s:%i: %s\n", d_name, __FILE__, __LINE__, strerror( errno ) );
+			g_free( d_name );
 
-		d_name = dir_name( name );
-
-		if ( make_dir( d_name, mode | S_IXUSR | S_IXGRP | S_IXOTH ) < 0 ) {
-			free( d_name );
 			return -1;
 		}
-
-		free( d_name );
-		fd = creat( name, mode );
 	}
+
+	g_free( d_name );
+	fd = creat( name, mode );
+
+	if ( -1 == fd ) {
+		fprintf( stderr, "Failed to create file '%s' in %s:%i: %s\n", name, __FILE__, __LINE__, strerror( errno ) );
+	} 
 
 	return fd;
 }
@@ -2226,75 +1917,78 @@ int make_file( char *name, mode_t mode ) {
  * If no slashes are present returns copy of input string
  * On error returns NULL
  */
-char *file_name( char *path ) {
-	char *p;
-	char *out;
-	int len = strlen( path ) + 1;
+// char *file_name( char *path ) {
+// 	char *p;
+// 	char *out;
+// 	int len = strlen( path ) + 1;
 
-	out = malloc( len );
+// 	out = malloc( len );
 
-	if ( NULL == out ) {
-		fprintf( stderr, "file_name: Failed to allocate memory\n" );
-		return NULL;
-	}
+// 	if ( NULL == out ) {
+// 		fprintf( stderr, "file_name: Failed to allocate memory\n" );
+// 		return NULL;
+// 	}
 
-	memset( out, '\0', len );
+// 	memset( out, '\0', len );
 
-	p = strrchr( path, '/' );
+// 	p = strrchr( path, '/' );
 
-	if ( NULL == p ) {
-		strcpy( out, path );
+// 	if ( NULL == p ) {
+// 		strcpy( out, path );
 
-	} else {
-		strcpy( out, ++p );
-	}
+// 	} else {
+// 		strcpy( out, ++p );
+// 	}
 
-	return out;
-}
+// 	return out;
+// }
 
 /**
  * Returns path name up to the last slash as a copy
  * If no slashes are present returns copy of input string
  * On error returns NULL
  */
-char *dir_name( char *path ) {
-	int debug = 0;
+// char *dir_name( char *path ) {
+// 	int debug = 0;
 
-	char *p;
-	char *out;
-	int len = strlen( path ) + 1;
+// 	char *p;
+// 	char *out;
+// 	int len = strlen( path ) + 1;
 
-	out = malloc( len );
+// 	out = malloc( len );
 
-	if ( NULL == out ) {
-		fprintf( stderr, "dir_name: Failed to allocate memory\n" );
-		return NULL;
-	}
+// 	if ( NULL == out ) {
+// 		fprintf( stderr, "dir_name: Failed to allocate memory\n" );
+// 		return NULL;
+// 	}
 
-	memset( out, '\0', len );
+// 	memset( out, '\0', len );
 
-	p = strrchr( path, '/' );
+// 	p = strrchr( path, '/' );
 
-	if ( NULL == p ) {
-		strcpy( out, path );
+// 	if ( NULL == p ) {
+// 		strcpy( out, path );
 
-	} else {
-		strncpy( out, path, p - &path[ 0 ] );
-	}
+// 	} else {
+// 		strncpy( out, path, p - &path[ 0 ] );
+// 	}
 
-	if ( DEBUG || debug )fprintf( stderr, "Path '%s' resolved to directory name '%s'\n", path, out );
+// 	if ( DEBUG || debug )fprintf( stderr, "Path '%s' resolved to directory name '%s'\n", path, out );
 
-	return out;
-}
+// 	return out;
+// }
 
 /**
  * Scan file and fill in structures of translations
- *
  */
 int fill_translation( FILE* f, char *name ) {
 	int debug = 0;
 
+	GSList *catalog_translation;
+	GSList *admin_translation;
+
 	char *p;
+	name = &name[ strlen( cwd ) ]; // Make it relative to CWD
 
 	if ( DEBUG || debug ) fprintf( stderr, "File: '%s'\n", name );
 
@@ -2315,17 +2009,31 @@ int fill_translation( FILE* f, char *name ) {
 	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Catalog side\n" );
 
-		fetch_translation( f, catalog_t );
+		fetch_translation( f, catalog_translation, NULL, FALSE );
 
 	} else if ( 0 == ( strncmp( name, "admin/", 6 ) ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Admin side\n" );
 
-		fetch_translation( f, admin_t );
+		fetch_translation( f, admin_translation, NULL, FALSE );
 
 	} else {
 		if ( DEBUG || debug ) fprintf( stderr, "Common side\n" );
 
-		fetch_translation( f, common_t );
+		fetch_translation( f, admin_translation, catalog_translation, TRUE );
+	}
+
+	if ( g_slist_length( catalog_translation ) ) {
+		start_clock();
+		save_translation( "admin", admin_translation );
+		end_clock( "Translation admin" );
+		g_slist_free_full( catalog_translation, (GDestroyNotify)g_free );
+	}
+
+	if ( g_slist_length( admin_translation ) ) {
+		start_clock();
+		save_translation( "catalog", catalog_translation );
+		end_clock( "Translation catalog" );
+		g_slist_free_full( admin_translation, (GDestroyNotify)g_free );
 	}
 
 	return 0;
@@ -2333,53 +2041,41 @@ int fill_translation( FILE* f, char *name ) {
 
 /**
  * Scans file pointed to by f and fills in structure l
- *
  */
-int fetch_translation( FILE* f, struct llist* l ) {
+int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_lists ) {
 	int debug = 0;
 
-	int i;
-	size_t tr_len;
-
 	char line[ MAX_LINE ];
-	char *tr;
 	char *translation;
-	char *start;
-	char *end;
 
-	struct llist* matches;
+	GRegex *regex = g_regex_new( "__\\( ('|\") \\s* ( [^\1]+ ) \1 (?:[^)]*) \\)", G_REGEX_EXTENDED, 0, NULL );
+	GMatchInfo *match_info;
 
 	rewind( f ); 
 
 	while( NULL != fgets( line, MAX_LINE, f ) ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Processing line '%s'", line );
+		if ( debug ) fprintf( stderr, "Processing line '%s'", line );
 
-		if ( 0 == match( line, "__\\(([^)]+)\\)", m, 0 ) ) {
-			if ( DEBUG || debug ) fprintf( stderr, "Match found\n" );
+		g_regex_match( regex, line, 0, &match_info );
 
-			matches = get_matches( line );
+		if ( g_match_info_matches( match_info ) ) {
+			translation = g_match_info_fetch( match_info, 2 );
 
-			if ( 0 == matches->get( "1", &tr, matches ) ) {
-				tr = trim( tr, NULL );
+			if ( debug ) fprintf( stderr, "Match found: %s\n", translation );
 
-				if ( tr[ 0 ] == '\'' || tr[ 0 ] == '"' ) {
-					start = &tr[ 0 ];
-					tr_len = strlen( tr );
+			list1 = g_slist_append( list1, translation );
 
-					for ( i = 2; i < tr_len; i++ ) {
-						if ( tr[ i ] == *start && tr[ i - 1 ] != '\\' ) {
-							end = &tr[ i ];
-							*end = '\0';
-							l->add( NULL, ++start, l );
-						}
-					}
-				}
+			if ( both_lists ) {
+				list2 = g_slist_append( list2, g_strdup( translation ) );
 			}
 
-			matches->empty( matches );
-			free( matches );
+			g_match_info_next (match_info, NULL);
 		}
+
+		g_match_info_free ( match_info );
 	}
+
+	g_regex_unref( regex );
 
 	if ( ferror( f ) ) {
 		fprintf( stderr, "fetch_translation: read file error: %s\n", strerror( errno ) );
@@ -2389,6 +2085,9 @@ int fetch_translation( FILE* f, struct llist* l ) {
 	return 0;
 }
 
+/**
+ * Runs php linter on files under temporary folder
+ */
 int php_lint() {
 	char path[ MAX_LINE ];
 
@@ -2400,7 +2099,10 @@ int php_lint() {
 	return 0;
 }
 
-int php_lint_cb( char *name, struct stat *sb ) {
+/**
+ * Callback for php linter iterator
+ */
+int php_lint_cb( char *name, void *data ) {
 	char cmd[ MAX_LINE + 7 ];
 	int code;
 	char *ext;
@@ -2447,83 +2149,74 @@ int php_lint_cb( char *name, struct stat *sb ) {
 * Saves translation file into temporary directory
 * name - admin or catalog
 * l - list off all the translation for specific side
-*
-* CHDIR to CWD
 */
-int save_translation( char *name, struct llist *l ) {
+int save_translation( char *name, GSList *l ) {
 	int debug = 0;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Saving translations for %s...\n", name );
 
 	int LEN = 1000; // Presume translation can have such length
 
-	FILE *from;
-	FILE *to;
+	FILE *from_stream = NULL;
+	FILE *to_stream = NULL;
 
 	char buff[ LEN ];
-	char from_name[ path_max_size ];
-	char to_name[ path_max_size ];
+	char *from_name;
+	char *to_name;
+	char *translation_folder;
+	char *code;
+	char *file_name;
+	char *to_folder;
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
+	GSList *current;
+
+	translation_folder = get_common_dir();
+	code = get_code();
+	file_name = Strcat( code, ".php" );
+
+	from_name = g_build_filename( cwd, name, "/language/en-gb/", translation_folder, file_name, NULL );
+	to_name = g_build_filename( cwd, pckg_tmp_dir, upload_folder, name, "/language/en-gb/", translation_folder, file_name, NULL );
+
+	to_folder = g_path_get_dirname( to_name );
+
+	if( -1 == g_mkdir_with_parents( to_folder, 0777 ) ) {
+		fprintf( stderr, "Failed to create folder '%s' in %s:%i: %s\n", to_folder, __FILE__, __LINE__, strerror( errno ) );
 		exit( 1 );
 	}
 
-	l->merge( common_t, l );
-
-	if ( DEBUG || debug ) fprintf( stderr, "%s translation merged\n", name );
-
-	strcpy( from_name, name );               // admin
-	strcat( from_name, "/language/en-gb/" ); // admin/language/en-gb/
-	strcat( from_name, get_common_dir() );   // admin/language/en-gb/extension/module/
-
-	strcpy( to_name, pckg_tmp_dir );         // .temp_dir/
-	strcat( to_name, upload_folder );        // .temp_dir/upload/
-	strcat( to_name, from_name );            // .temp_dir/upload/admin/language/en-gb/extension/module/
-
-	// If folder doesn't exist
-	make_dir( to_name, 0775 );
-
-	strcat( from_name, code );              // admin/language/en-gb/extension/module/extension_name
-	strcat( to_name, code );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name
-	strcat( from_name, ".php" );            // admin/language/en-gb/extension/module/extension_name.php
-	strcat( to_name, ".php" );				// .temp_dir/upload/admin/language/en-gb/extension/module/extension_name.php
-
-	files->add( from_name, from_name, files );
-
 	if ( DEBUG || debug ) {
-		fprintf( stderr, "Source path: '%s'\nTarget path: '%s'\nCWD: '%s'\n", from_name, to_name, cwd );
+		fprintf( stderr, "Source path: '%s'\nTarget path: '%s'\n", from_name, to_name );
 	}
 
-	if ( NULL == ( to = fopen( to_name, "w+" ) ) ) {
+	if ( NULL == ( to_stream = fopen( to_name, "w+" ) ) ) {
 		fprintf( stderr, "save_translation: failed to open file '%s': %s\n", to_name, strerror( errno ) );
 		exit( 1 );
 	}
 
-	fputs( "<?php\n", to );
+	fputs( "<?php\n", to_stream );
 
 	if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", to_name );
 
-	if ( NULL != ( from  = fopen( from_name, "r" ) ) ) {
+	if ( NULL != ( from_stream  = fopen( from_name, "r" ) ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "File '%s' opened\n", from_name );
 
-		while ( NULL != fgets( buff, LEN, from ) ) {
+		while ( NULL != fgets( buff, LEN, from_stream ) ) {
 
 			// Save predefined translations
 			if (
-				1 == match( buff, "\\$_\\[\\s*'\\s*heading_title\\s*'", NULL, 0 ) &&
-				1 == match( buff, "\\$_\\[\\s*'\\s*text_advertikon_stripe\\s*'", NULL, 0 )
+				!g_regex_match_simple( "\\$_\\[\\s*'\\s*heading_title\\s*'", buff, 0, 0 ) &&
+				!g_regex_match_simple( "\\$_\\[\\s*'\\s*text_advertikon_stripe\\s*'", buff, 0, 0 )
 			) {
 				continue;
 			}
 
-			if ( EOF == fputs( buff, to ) ) {
+			if ( EOF == fputs( buff, to_stream ) ) {
 				fprintf( stderr, "save_translation: file '%s' writing error: %s\n",to_name, strerror( errno ) );
 				exit( 1 );
 			}
 		}
 
-		if ( ferror( from ) ) {
+		if ( ferror( from_stream ) ) {
 			fprintf( stderr, "save_translation: file '%s' reading error: %s\n", from_name, strerror( errno ) );
 			exit( 1 );
 		}
@@ -2533,31 +2226,31 @@ int save_translation( char *name, struct llist *l ) {
 		exit( 1 );
 	}
 
-	if ( NULL != l->first ) {
+	current = l;
+
+	if ( NULL != current ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Writing translations....\n" );
 
-		if ( debug ) l->print( l );
+		if ( debug ) fprintf( stderr, "$_['%1$s'] = '%1$s';\n", (char*)current->data );
 
-		l->current = l->first;
-
-		while( l->current ) {
-			if ( debug ) fprintf( stderr, "$_['%1$s'] = '%1$s';\n", (char*)l->current->value );
-
-			sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)l->current->value );
-			fputs( buff, to );
-			l->current = l->current->next;
-		}
+		sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)current->data );
+		fputs( buff, to_stream );
+		current = current->next;
 	}
 
 	if ( debug ) {
-		fprintf( stderr, "From FILE: %p, to FILE %p\n", from, to );
+		fprintf( stderr, "From FILE: %p, to FILE %p\n", from_stream, to_stream );
 	}
 
-	if ( NULL != from ) {
-		fclose( from );
+	if ( NULL != from_stream ) {
+		fclose( from_stream );
 	}
 
-	fclose( to );
+	fclose( to_stream );
+	g_free( translation_folder );
+	g_free( code );
+	g_free( file_name );
+	g_free( to_folder );
 
 	if ( debug ) fprintf( stderr, "Exit save translation\n" );
 
@@ -2566,160 +2259,139 @@ int save_translation( char *name, struct llist *l ) {
 
 /**
  * Runs all registered filters on each package files in turn
- * CHDIR to temp folder and then back to CWD
  */
 int run_filters() {
-	int debug = 0;
-
-	FILE *f;
-	char path[ path_max_size ];
-	char *ext;
-
-	if ( DEBUG || debug ) fprintf( stderr, "Start filtering...\n" );
-
-	if ( NULL == filters ) {
-		init_filters();
-	}
+	if ( DEBUG ) fprintf( stderr, "Start filtering...\n" );
 
 	// There are no files to process upon or there are no filters to process with
-	if ( NULL == files->first || NULL == filters->first ) {
-		if ( DEBUG || debug ) fprintf( stderr, "There is no filters to be run\n" );
+	if ( NULL == filters || NULL == files ) {
+		if ( DEBUG ) fprintf( stderr, "There is no filters to be run\n" );
 		return 0;
 	}
 
-	files->current = files->first;
+	iterate( g_build_filename( cwd, pckg_tmp_dir, NULL ), run_filters_cb, NULL, on_iterate_error );
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
-		exit( 1 );
+	return 0;
+}
+
+/**
+ * Run filters callback
+ */
+int run_filters_cb( char* file, void* data ) {
+	int debug = 0;
+
+	FILE *f;
+	char *path;
+	char *ext;
+
+	GSList *current_filter;
+
+	path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
+
+	if ( DEBUG || debug ) fprintf( stderr, "File '%s'\n", file );
+
+	ext = strrchr( file, '.' );
+
+	// If file is not php, tpl or xml  - skip it
+	if (
+		NULL == ext
+		||
+		(
+			strncmp( ext, ".php", 4 ) != 0 &&
+			strncmp( ext, ".tpl", 4 ) != 0 &&
+			strncmp( ext, ".xml", 4 ) != 0 &&
+			strncmp( ext, ".js", 3 )  != 0 &&
+			strncmp( ext, ".css", 4 ) != 0
+		)
+	) return 0;
+
+	if ( NULL == ( f = fopen( file, "r+" ) ) ) {
+		fprintf(
+			stderr,
+			"run_filters: failed to open file '%s' in %s:%i: %s\n",
+			file,
+			__FILE__,
+			__LINE__,
+			strerror( errno )
+		);
+
+		return 1;
 	}
 
-	strcpy( path, pckg_tmp_dir );
-	strcat( path, upload_folder );
+	current_filter = filters;
 
-	if ( -1 == chdir( path ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", path );
-		exit( 1 );
+	while( current_filter ) {
+		((callback)current_filter->data)( f, file );
+		current_filter = current_filter->next;
 	}
 
-	while ( files->current ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Opening file '%s'\n", files->current->name );
+	fclose( f );
 
-		ext = strrchr( files->current->name, '.' );
-
-		// If file is not php, tpl or xml  - skip it
-		if (
-			NULL == ext
-			||
-			(
-				strncmp( ext, ".php", 4 ) != 0 &&
-				strncmp( ext, ".tpl", 4 ) != 0 &&
-				strncmp( ext, ".xml", 4 ) != 0 &&
-				strncmp( ext, ".js", 3 )  != 0 &&
-				strncmp( ext, ".css", 4 ) != 0
-			)
-		) goto next;
-
-		if ( NULL != strstr( files->current->name, "ocmod.xml" ) && NULL != strstr( files->current->name, "system/")  ) {
-
-			// system/name.ocmod.xml is now ../install.xml
-			if ( NULL == ( f = fopen( "../install.xml", "r+" ) ) ) {
-				fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
-				return 1;
-			}
-
-		} else {
-			if ( NULL == ( f = fopen( files->current->name, "r+" ) ) ) {
-				fprintf( stderr, "run_filters: failed to open file '%s'\n", files->current->name );
-				return 1;
-			}
-		}
-
-		filters->current = filters->first;
-
-		while( filters->current ) {
-			if ( DEBUG || debug ) fprintf( stderr, "Running filter '%s'\n", filters->current->name );
-
-			((callback)filters->current->value)( f, files->current->name );
-			filters->current = filters->current->next;
-		}
-
-		fclose( f );
-		next: files->current = files->current->next;
-	}
-
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "run_filters: failed to CHDIR to '%s'\n", cwd );
-		exit( 1 );
-	}
+	return 0;
 }
 
 /**
  * Registers filters
- *
  */
 int init_filters() {
 	if ( DEBUG ) fprintf( stderr, "Initializing filters\n" );
 
-	filters = init_llist();
-	filters->addp( "translation", fill_translation, filters );
-	filters->addp( "version", add_version, filters );
+	filters = g_slist_append( filters, fill_translation );
+	filters = g_slist_append( filters, add_version );
 
 	return 0;
 }
 
 /**
  * Returns pointer to list of matches gotten from match structure of regex
- *
  */
-struct llist *get_matches( const char *str ) {
-	int debug = 0;
+// struct llist *get_matches( const char *str ) {
+// 	int debug = 0;
 
-	size_t str_len = strlen( str ) + 1;
-	int reg_len, i;
+// 	size_t str_len = strlen( str ) + 1;
+// 	int reg_len, i;
 
-	if ( DEBUG || debug ) fprintf( stderr, "Start fetching matches form string '%s' with the length: %ld\n", str, str_len );
+// 	if ( DEBUG || debug ) fprintf( stderr, "Start fetching matches form string '%s' with the length: %ld\n", str, str_len );
 
-	char* t_line = malloc( str_len );
+// 	char* t_line = malloc( str_len );
 
-	if ( NULL == t_line ) {
-		print_error( "get_matches: failed to allocate memory" );
-	}
+// 	if ( NULL == t_line ) {
+// 		print_error( "get_matches: failed to allocate memory" );
+// 	}
 
-	struct llist *matches;
-	matches = init_llist();
+// 	struct llist *matches;
+// 	matches = init_llist();
 
-	for ( i = 0; i < REGEX_MATCH_COUNT, m[ i ].rm_so >= 0; i++ ) {
-		if ( -1 != m[ i ].rm_so ) {
+// 	for ( i = 0; i < REGEX_MATCH_COUNT, m[ i ].rm_so >= 0; i++ ) {
+// 		if ( -1 != m[ i ].rm_so ) {
 
-			if ( DEBUG || debug ) fprintf( stderr, "Match #%d\n", i  );
-			if ( DEBUG || debug ) fprintf( stderr, "Match start: %d, match end: %d\n", m[ i ].rm_so, m[ i ].rm_eo );
+// 			if ( DEBUG || debug ) fprintf( stderr, "Match #%d\n", i  );
+// 			if ( DEBUG || debug ) fprintf( stderr, "Match start: %d, match end: %d\n", m[ i ].rm_so, m[ i ].rm_eo );
 
-			memset( t_line, '\0', str_len );
-			reg_len = m[ i ].rm_eo - m[ i ].rm_so;
+// 			memset( t_line, '\0', str_len );
+// 			reg_len = m[ i ].rm_eo - m[ i ].rm_so;
 
-			if ( DEBUG || debug ) fprintf( stderr, "Copying string from offset %d %d characters length\n", m[ i ].rm_so, reg_len );
+// 			if ( DEBUG || debug ) fprintf( stderr, "Copying string from offset %d %d characters length\n", m[ i ].rm_so, reg_len );
 
-			strncpy( t_line, &str[ m[ i ].rm_so ], reg_len );
+// 			strncpy( t_line, &str[ m[ i ].rm_so ], reg_len );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Match value: '%s'\n", t_line );
+// 			if ( DEBUG || debug ) fprintf( stderr, "Match value: '%s'\n", t_line );
 
-			matches->add( NULL, t_line, matches );
-		}
-	}
+// 			matches->add( NULL, t_line, matches );
+// 		}
+// 	}
 
-	free( t_line );
+// 	free( t_line );
 
-	return matches;
-}
+// 	return matches;
+// }
 
 /**
  * FS iterator callback to empty a folder. Unlinks files
- *
  */
-int del_file_cb( char *name, struct stat *sb ) {
+int del_file_cb( char *name, void *data ) {
 	if ( 0 != unlink( name ) ) {
-		fprintf( stderr, "Failed to unlink file '%s': %s\n", name, strerror( errno ) );
+		fprintf( stderr, "Failed to unlink file '%s' in %s:%i: %s\n", name, __FILE__, __LINE__, strerror( errno ) );
 
 		exit( 1 );
 	}
@@ -2729,11 +2401,10 @@ int del_file_cb( char *name, struct stat *sb ) {
 
 /**
  * FS iterator callback to empty a folder. Deletes files
- *
  */
-int del_dir_cb( char *name, struct stat *sb ) {
+int del_dir_cb( char *name, void *data ) {
 	if ( 0 != rmdir( name ) ) {
-		fprintf( stderr, "Failed to remove directory '%s': %s\n", name, strerror( errno ) );
+		fprintf( stderr, "Failed to remove directory '%s' in %s:%i: %s\n", name, __FILE__, __LINE__, strerror( errno ) );
 
 		exit( 1 );
 	}
@@ -2742,45 +2413,44 @@ int del_dir_cb( char *name, struct stat *sb ) {
 }
 
 /**
- * Returns common part for package files. Eg extension/module
- *
+ * Returns common part for package files. Eg extension/module. Needs to be freed
  */
 char *get_common_dir() {
 	char *p;
 	char *end;
+	GSList *current;
 
-	if ( 0 != strlen( lang_dir ) ) {
-		return lang_dir;
-	}
+	char lang_dir[ path_max_size ];
 
-	if ( NULL == files->first ) {
+	if ( 0 == g_slist_length( files ) ) {
 		fprintf( stderr, "get_common_dir: Files list is empty\n" );
-		return lang_dir;
+		return NULL;
 	}
 
-	files->current = files->first;
+	current = files;
+	memset( lang_dir, 0, path_max_size );
 
-	while ( files->current ) {
-		if ( NULL != ( p = strstr( files->current->name, "/controller/" ) ) ) {
+	while ( current ) {
+		if ( NULL != ( p = strstr( current->data, "/controller/" ) ) ) {
 			if ( NULL != ( end = strrchr( p, '/' ) ) ) {
 
 				// With leading slash
 				strncpy( lang_dir, p + 12, end - p - 11 );
+				return g_strdup( lang_dir );
 				
 			} else {
-				print_error( "get_common_dir: failed to fetch common part from controller path '%s'\n", files->current->name );
+				fprintf( stderr, "get_common_dir: failed to fetch common part from controller path '%s'\n", (char*)current->data );
 			}
 		}
 
-		files->current = files->current->next;
+		current = current->next;
 	}
 
-	return lang_dir;
+	return NULL;
 }
 
 /**
  * Makes changes to temporary files structure to make package conforms OC20 restrictions
- *
  */
 int make_oc20() {
 	int debug = 0;
@@ -2792,123 +2462,123 @@ int make_oc20() {
 	char new_name[ path_max_size ];
 	char *dir;
 
+	GSList *current;
+
 	strcpy( t_cwd, pckg_tmp_dir );
 	strcat( t_cwd, upload_folder );
 
 
-	if ( NULL == files->first ) {
+	if ( NULL == files ) {
 		fprintf( stderr, "make_oc20: FIles list is empty, nothing to process\n" );
 		return 1;
 	}
 
-	files->current = files->first;
+	current = files;
 
-	if ( -1 == chdir( t_cwd ) ) {
-		fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", t_cwd, strerror( errno ) );
-		exit( 1 );
-	}
+	// if ( -1 == chdir( t_cwd ) ) {
+	// 	fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", t_cwd, strerror( errno ) );
+	// 	exit( 1 );
+	// }
 
-	while ( NULL != files->current ) {
+	while ( NULL != current ) {
 
-		if ( NULL != ( p = strstr( files->current->name, "/controller/extension/" ) ) ) {
+		if ( NULL != ( p = strstr( current->data, "/controller/extension/" ) ) ) {
 			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, files->current->name, p - files->current->name  + 12 ); // from the start up to leading slash
+			strncpy( new_name, current->data, p - (char*)current->data  + 12 ); // from the start up to leading slash
 			strcat( new_name, p + 22 );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
 
-			dir = dir_name( new_name );
-			make_dir( dir, 0775 );
-			free( dir );
+			dir = g_path_get_dirname( new_name );
+			g_mkdir_with_parents( dir, 0777 );
+			g_free( dir );
 
-			if ( -1 == rename( files->current->name, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+			if ( -1 == rename( current->data, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
 				exit( 1 );
 			}
 
 			content_to_oc20( new_name );
 		}
 
-		if ( NULL != ( p = strstr( files->current->name, "/en-gb/" ) ) ) {
+		if ( NULL != ( p = strstr( current->data, "/en-gb/" ) ) ) {
 			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, files->current->name, p - files->current->name ); // from the start up to leading slash
+			strncpy( new_name, current->data, p - (char*)current->data ); // from the start up to leading slash
 			strcat( new_name, "/english" );
 
-			if ( NULL != strstr( files->current->name, "/en-gb/extension/" ) ) {
+			if ( NULL != strstr( current->data, "/en-gb/extension/" ) ) {
 				strcat( new_name, p + 16 );
 
 			} else {
 				strcat( new_name, p + 6 );
 			}
 
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
 
-			dir = dir_name( new_name );
-			make_dir( dir, 0775 );
-			free( dir );
+			dir = g_path_get_dirname( new_name );
+			g_mkdir_with_parents( dir, 0777 );
+			g_free( dir );
 			
-			if ( -1 == rename( files->current->name, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+			if ( -1 == rename( current->data, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
 				exit( 1 );
 			}
 		}
 
-		if ( NULL != ( p = strstr( files->current->name, "/model/extension/" ) ) ) {
+		if ( NULL != ( p = strstr( current->data, "/model/extension/" ) ) ) {
 			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, files->current->name, p - files->current->name  + 7 ); // from the start up to leading slash
+			strncpy( new_name, current->data, p - (char*)current->data  + 7 ); // from the start up to leading slash
 			strcat( new_name, p + 17 );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
 
-			dir = dir_name( new_name );
-			make_dir( dir, 0775 );
-			free( dir );
+			dir = g_path_get_dirname( new_name );
+			g_mkdir_with_parents( dir, 0777 );
+			g_free( dir );
 			
-			if ( -1 == rename( files->current->name, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+			if ( -1 == rename( current->data, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
 				exit( 1 );
 			}
 
 			content_to_oc20( new_name );
 		}
 
-		if ( NULL != ( p = strstr( files->current->name, "/template/extension/" ) ) ) {
+		if ( NULL != ( p = strstr( current->data, "/template/extension/" ) ) ) {
 			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, files->current->name, p - files->current->name  + 10 ); // from the start up to leading slash
+			strncpy( new_name, current->data, p - (char*)current->data  + 10 ); // from the start up to leading slash
 			strcat( new_name, p + 20 );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", files->current->name, new_name );
+			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
 
-			dir = dir_name( new_name );
-			make_dir( dir, 0775 );
-			free( dir );
+			dir = g_path_get_dirname( new_name );
+			g_mkdir_with_parents( dir, 0777 );
+			g_free( dir );
 			
-			if ( -1 == rename( files->current->name, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", files->current->name, new_name, strerror( errno ) );
+			if ( -1 == rename( current->data, new_name ) ) {
+				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
 				exit( 1 );
 			}
 		}
 
-
-		files->current = files->current->next;
+		current = current->next;
 	}
 
 	// Remove all empty directories
-	iterate( ".", NULL, del_empty_dirs_cb, on_iterate_error );
+	iterate( g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL ), NULL, del_empty_dirs_cb, on_iterate_error );
 
-	if ( -1 == chdir( cwd ) ) {
-		fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
-		exit( 1 );
-	}
+	// if ( -1 == chdir( cwd ) ) {
+	// 	fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
+	// 	exit( 1 );
+	// }
 
 	return 0;
 }
 
 /**
  * Directory callback for delete empty folders iterator
- *
  */
-int del_empty_dirs_cb( char *path, struct stat *sb ) {
+int del_empty_dirs_cb( char *path, void *data ) {
 		if ( rmdir( path ) && ENOTEMPTY != errno ) {
 		fprintf( stderr, "del_empty_dirs_cb: path: '%s', error: %s\n", path, strerror( errno ) );
 		return 1;
@@ -2919,17 +2589,20 @@ int del_empty_dirs_cb( char *path, struct stat *sb ) {
 
 /**
  * Changes classes names for controller and model to be OC20 compliant
- *
  */
 int content_to_oc20( char *name ) {
 	int debug = 0;
 
 	FILE *f;
 	char buff[ MAX_LINE ];
-	struct llist *matches;
+	char new_line[ MAX_LINE ];
 	size_t len;
+	int match_start;
+	int match_end;
+	char *matched_string;
 
-	char tb[ MAX_LINE ];
+	GRegex *regex = g_regex_new( "class\\s+\\w+?(extension)", G_REGEX_CASELESS, 0, NULL );
+	GMatchInfo *match_info;
 
 	if ( NULL == ( f = fopen( name, "r+" ) ) ) {
 		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
@@ -2940,27 +2613,29 @@ int content_to_oc20( char *name ) {
 
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
 		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
-		if ( DEBUG || debug ) fprintf( stderr,  "Current offest: %ld\n", ftello( f ) );
+		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
 
-		if ( 0 == match( buff, "class\\s+\\w+?(extension)", m, REG_ICASE ) ) {
+		if ( g_regex_match( regex, buff, 0, 0 ) ) {
 			if ( DEBUG || debug ) {
 				fprintf( stderr, "Matched string \n'%s'\n", buff );
-				matches = get_matches( buff );
-				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
+				matched_string = g_match_info_fetch( match_info, 1 );
+				fprintf( stderr, "Match: '%s'\n", matched_string );
+				g_free( matched_string );
 			}
+
+			g_match_info_fetch_pos( match_info, 1, &match_start, &match_end );
 
 			len = strlen( buff );
 
-			memset( tb, '\0', MAX_LINE );
-			strncpy( tb, buff, m[ 1 ].rm_so );
-			strcat( tb, &buff[ m[ 1 ].rm_eo ] );
-
-			// Add spaces in place of removed characters up to original newline character
-			strcat( tb, "         \n" );
-
-			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: \n'%s'\n", tb );
+			new_line[ len ] = '\0';
+			strncpy( new_line, buff, match_start ); // Copy everything up to "extension"
+			strcat( new_line, &buff[ match_end ] ); // After "extension"
+			strcat( new_line, "         \n" ); // Add spaces in place of removed characters up to original newline character
+ 
+			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: \n'%s'\n", new_line );
 			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", len );
 
+			// Get 1 line back in file stream
 			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
 				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
 				exit( 1 );
@@ -2968,26 +2643,27 @@ int content_to_oc20( char *name ) {
 
 			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
 
-			if ( EOF == fputs( tb, f ) ) {
+			if ( EOF == fputs( new_line, f ) ) {
 				fprintf( stderr, "content_to_oc20: failed to write back string to a file '%s': %s\n", name, strerror( errno ) );
 				exit( 1 );
 			}
 
 			if ( DEBUG || debug ) fprintf( stderr,  "File '%s' was modified\n", name );
 
+			g_match_info_unref( match_info );
+
 			break;
 		}
 	}
 
 	fclose( f );
+	g_regex_unref( regex );
 
 	return 0;
 }
 
 /**
  * Adds versions numbers to package files
- *
- *
  */
 int add_version( FILE *f ) {
 	int debug = 0;
@@ -2995,143 +2671,96 @@ int add_version( FILE *f ) {
 	char buff[ MAX_LINE ];
 	char prev[MAX_LINE ];
 	char new_buff[ MAX_LINE ];
+	char *matched_string;
 	struct llist *matches;
-	size_t len, str_len, buff_len, new_len;
+	size_t len, matched_len, buff_len, new_len;
 	int c = 0;
 	char *p;
 	int i;
+	int match_start;
+	int match_end;
+
+	GRegex *regex = g_regex_new( "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+ *)$", G_REGEX_MULTILINE, 0, NULL );
+	GMatchInfo *match_info;
+
+	GSList *list_major, *list_minor, *list_patch;
+
+	int major, minor, patch;
+
+	list_major = g_hash_table_lookup( config, "major" );
+	list_minor = g_hash_table_lookup( config, "minor" );
+	list_patch = g_hash_table_lookup( config, "patch" );
+	g_return_val_if_fail( NULL != list_major, 1 );
+	g_return_val_if_fail( NULL != list_minor, 1 );
+	g_return_val_if_fail( NULL != list_patch, 1 );
 
 	rewind( f );
 
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
 		if ( c > 10 ) break;
 
-		if ( 0 == match( buff, "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+ *)$", m, REG_NEWLINE ) ) {
+		if ( g_regex_match( regex, buff, 0, &match_info ) ) {
 			if ( DEBUG || debug ) {
 				printf( "Prev: '%s'\n", prev );
 				fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
 				fprintf( stderr, "Matched string\n" );
 
-				p = buff;
-				while( '\0' != *p ) {
-					printf( "%4c", *p );
-					p++;
-				}
+				dump_string( buff );
 
-				printf( "\n" );
-
-				p = buff;
-				while( '\0' != *p ) {
-					printf( "%4d", *p );
-					p++;
-				}
-
-				printf( "\n" );
-
-				p = buff;
-				i = 0;
-				while( '\0' != *p ) {
-					printf( "%4d", i++ );
-					p++;
-				}
-
-				printf( "\n" );
-
-				matches = get_matches( buff );
-				fprintf( stderr, "Match: '%s'\n", (char*)matches->fetch( "1", matches ) );
+				matched_string = g_match_info_fetch( match_info, 1 );
+				fprintf( stderr, "Match: '%s'\n", matched_string );
+				g_free( matched_string );
 			}
 
-			// Length of package current version in characters
-			len = N_LEN( major ) + N_LEN( minor ) + N_LEN( patch ) + 2;
+			g_match_info_fetch_pos( match_info, 1, &match_start, &match_end );
 
-			if ( DEBUG || debug ) fprintf( stderr, "Major: %f, minor - %f, patch: %f\n", N_LEN( major ), N_LEN( minor ), N_LEN( patch ) );
+			// Length of package current version in characters.
+			len = strlen( list_major->data ) + strlen( list_minor->data ) + strlen( list_patch->data ) + 2; // Plus 2 dots
+
+			if ( DEBUG || debug ) fprintf( stderr, "Major: %li, minor - %li, patch: %li\n", strlen( list_major->data ), strlen( list_minor->data ), strlen( list_patch->data ) );
 
 			// Matched version length
-			str_len = m[ 1 ].rm_eo - m[ 1 ].rm_so;
+			matched_len = match_end - match_start;
 
 			// Buffer length
 			buff_len = strlen( buff );
 
-			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%d.%d.%d) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", major, minor, patch, len, str_len, buff_len, m[ 1 ].rm_so, m[ 1 ].rm_eo );
+			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%s.%s.%s) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", (char*)list_major->data, (char*)list_minor->data, (char*)list_patch->data, len, matched_len, buff_len, match_start, match_end );
 
 			memset( new_buff, '\0', MAX_LINE );
-			strncpy( new_buff, buff, m[ 1 ].rm_so );
+			strncpy( new_buff, buff, match_start );
 
-			// Add version numbers right after '@version '
-			if ( str_len < len && str_len >= 5 ) {
+			// Add version numbers right after '@version
+			// Insufficient space but no less then 5 characters to accommodate 0.0.0
+			if ( matched_len < len && matched_len >= 5 ) {
 				strcat( new_buff, "0.0.0" );
 				len = 5;
 
-			} else if ( str_len >= len ) {
-				sprintf( &new_buff[ m[ 1 ].rm_so ], "%d.%d.%d", major, minor, patch );
+			// Space is OK
+			} else if ( matched_len >= len ) {
+				sprintf( &new_buff[ match_start ], "%d.%d.%d", major, minor, patch );
 
 			} else {
 				break;
 			}
 
 			if ( debug ) {
-				p = new_buff;
-				while( '\0' != *p ) {
-					printf( "%4c", *p );
-					p++;
-				}
-
-				printf( "\n" );
-
-				p = new_buff;
-				while( '\0' != *p ) {
-					printf( "%4d", *p );
-					p++;
-				}
-
-				printf( "\n" );
-
-				p = new_buff;
-				i = 0;
-				while( '\0' != *p ) {
-					printf( "%4d", i++ );
-					p++;
-				}
-
-				printf( "\n" );
+				dump_string( new_buff );
 			}
 			
 			new_len = strlen( new_buff );
 
 			if ( DEBUG || debug ) fprintf( stderr, "New buffer length: %ld\n", new_len );
 
-			if ( str_len > len ) {
-				if ( debug ) fprintf( stderr, "Padding right with %ld spaces\n", str_len - len );
-				memset( &new_buff[ new_len ], ' ', str_len - len );
+			if ( matched_len > len ) {
+				if ( debug ) fprintf( stderr, "Padding right with %ld spaces\n", matched_len - len );
+				memset( &new_buff[ new_len ], ' ', matched_len - len );
 			}
 
 			strcat( new_buff, "\n" );
 
 			if ( debug ) {
-				p = new_buff;
-				while( '\0' != *p ) {
-					printf( "%4c", *p );
-					p++;
-				}
-
-				printf( "\n" );
-
-				p = new_buff;
-				while( '\0' != *p ) {
-					printf( "%4d", *p );
-					p++;
-				}
-
-				printf( "\n" );
-
-				p = new_buff;
-				i = 0;
-				while( '\0' != *p ) {
-					printf( "%4d", i++ );
-					p++;
-				}
-
-				printf( "\n" );
+				dump_string( new_buff );
 
 				fprintf( stderr, "Result to be saved: '%s'\n", new_buff );
 				fprintf( stderr, "Buffer new length: %ld\n", strlen( new_buff ) );
@@ -3215,7 +2844,6 @@ int fix_vqmod_file( xmlDocPtr doc, xmlNodePtr cur ) {
 }
 
 xmlDocPtr parseDoc() {
-
 	xmlDocPtr doc;
 	xmlNodePtr cur, prev, mod;
 	char name[path_max_size ];
@@ -3287,12 +2915,12 @@ int make_vqmod() {
 	return 0;
 }
 
-int set_config_name() {
-	strcat( config_name, "_" );
-	strcat( config_name, code );
+// int set_config_name() {
+// 	strcat( config_name, "_" );
+// 	strcat( config_name, code );
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /**
  * Parses configuration file and fills in configuration container
