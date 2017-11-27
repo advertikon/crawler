@@ -7,7 +7,6 @@
 #include <limits.h>
 #include <unistd.h>
 #include <errno.h>
-#include <signal.h>
 #include <regex.h>
 #include <time.h>
 #include <sys/times.h>
@@ -24,67 +23,32 @@
 #include <assert.h>
 #include <gtk/gtk.h>
 
-#include "error.h"
-#include "args.h"
 #include "path.h"
-#include "structure.h"
 
-typedef void Sigfunc( int );
-// typedef int It_file(  char*, struct stat* );
-// typedef int It_dir(  char*, struct stat* );
-// typedef int It_error(  char* );
-
-
-// int usage( void );
+typedef int(*callback)();
 
 int parse_config( char* );
-// int add_to(  char* );
-// int del_from(  char*, struct llist* );
-// int start_add( struct llist* );
-// int start_del( struct llist* );
-// int show_commands( void );
-// int add_to_config( struct llist* );
-// int remove_from_config( struct llist* );
 int abort_config( void );
-// int print_del_list( struct llist* );
-// int confirmed_operation( void );
-// int end_operation( void );
-// int write_config_section( char*, FILE*, struct llist* );
 void int_handler( int );
 gboolean check_file(  char* );
 void collide_length(  char*, GSList*, int* );
-// gboolean collide_span(  char*,  char* );
-// char* get_regerror( int, regex_t* );
-// int match(  char*,  char*, regmatch_t*, int );
 gboolean check_regexp(  char*, GSList* );
 void start_clock( void );
 void end_clock( char* );
-// int print_config( void );
-// int print_files( void );
 static void set_winsize( void );
 static void sig_winch( int );
 int load_dependencies( void );
-// char *ltrim( char*,  char* );
-// char *trim( char*,  char* );
-// char *rtrim( char*,  char* );
-// int is_file(  char* );
-// int is_dir(  char* );
 int check_item( char*, void* );
 int check_source( char*, void* );
 int on_iterate_error( char*, void* );
-// char* add_cwd( char* );
 int make_package( void );
 int run_zip( char* );
 void sig_cld( int );
-// int make_dir( char*, mode_t );
 int fill_temp_package();
 int make_file( char*, mode_t );
-// char *file_name( char* );
-// char *dir_name( char* );
 int fill_translation( FILE*, char* );
 int run_filters( void );
 int fetch_translation( FILE*, GSList*, GSList*, gboolean );
-// struct llist* get_matches( const char* );
 int init_filters( void );
 int get_version( void );
 char *get_package_dir( void );
@@ -98,12 +62,10 @@ int content_to_oc20( char* );
 int add_version( FILE * );
 int make_vqmod();
 int fix_vqmod_file( xmlDocPtr, xmlNodePtr );
-// int set_config_name( void );
 int xml_to_config( char*, xmlNodePtr );
 xmlNodePtr config_to_xml( char*, GSList* );
 int php_lint();
 int php_lint_cb( char*, void* );
-
 void destroy( GtkWidget *, gpointer );
 void show_error( char * );
 int get_package_configs( void );
@@ -127,36 +89,18 @@ void delete_config_dialog_hide( GtkButton *, gpointer );
 void get_files( void*, void* );
 char *get_code( void );
 int run_filters_cb( char*, void* );
+void _delete_config( GtkButton*, gpointer );
+void delete_config_hide( GtkButton*, gpointer );
+void init_config_hash( void );
+void print_error( char* );
+void files_to_view( void );
 
 
 #define MAX_LINE 400
-#define DEBUG 1
+#define DEBUG 0
 #define REGEX_MATCH_COUNT 10
 #define VERSION_SIZE 10
 #define BUFF_SIZE 4096
 
 #define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
 #define N_LEN( n ) ( ( ( 0 == n ) ? 1 : ( ( 0 == ( n % 10 ) ) ? ceil( log10( n ) ) + 1 : ceil( log10( n ) ) ) ) )
-
-enum COMMANDS {
-	C_ADD_INCL_FOLDER = 1,
-	C_ADD_EXCL_FOLDER,
-	C_DEL_INCL_FOLDER,
-	C_DEL_EXCL_FOLDER,
-	C_ADD_INCL_FILE,
-	C_ADD_EXCL_FILE,
-	C_DEL_INCL_FILE,
-	C_DEL_EXCL_FILE,
-	C_ADD_INCL_REGEXP,
-	C_ADD_EXCL_REGEXP,
-	C_DEL_INCL_REGEXP,
-	C_DEL_EXCL_REGEXP,
-	C_SET_NAME,
-	C_ITERATE,
-	C_PRINT_FILES,
-	C_PRINT_CONFIG,
-	C_MAKE,
-	C_SET_MAJOR,
-	C_SET_MINOR,
-	C_SET_PATCH
-};

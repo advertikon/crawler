@@ -1,10 +1,6 @@
 #include "header.h"
 
-char* mod_name = "Crawler";
 char* code;
-char* cur_input = NULL;
-char *abort_command_str = "q";
-char config_name[ MAX_LINE ] = ".crawler";
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
@@ -12,26 +8,15 @@ char *pckg_name_templ = "%s-%s-%s.%s.%s.ocmod.zip";
 char *pckg_name_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
 char *lang_prefix_23 = "language/en-gb/";
 char *lang_prefix_20 = "language/english/";
-
-char *lang_dir;
 char* cwd;
 
-static int depth = 0;
 static off_t total_size = 0;
 
-int command = 0;
-int config_is_dirty = 0;
-int wait_confirm = 0;
-int save_me = 0;
-int cwd_length = 0;
 int files_count;
-int major = 0; // Package major number
-int minor = 0; // Package minor number
-int patch = 0; // Package patch number
 
 size_t path_max_size;
 
-GHashTable *config = NULL;
+GHashTable *config;
 GSList *filter_names = NULL;
 
 // Filters list to path each file through
@@ -76,6 +61,7 @@ GtkTextBuffer *buffer_include_folder;
 GtkTextBuffer *buffer_exclude_folder;
 GtkTextBuffer *buffer_include_regex;
 GtkTextBuffer *buffer_exclude_regex;
+GtkTextBuffer *buffer_file_list;
 
 // Config manage buttons
 GtkButton *button_reload_config;
@@ -91,6 +77,9 @@ GtkButton *button_delete_package_cancel;
 
 // Iterate over FS button
 GtkButton *button_iterate;
+
+// Button to make package
+GtkButton *button_make_package;
 
 // Select package event handler ID
 gulong select_package_handler = 0;
@@ -172,6 +161,12 @@ int main( int argc, char **argv ) {
     button_delete_package_ok = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_ok" ) );
     button_delete_package_cancel = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_delete_package_cancel" ) );
 
+    // Delete configuration dialog OK button click handler
+    g_signal_connect ( button_delete_package_ok, "clicked", G_CALLBACK ( _delete_config ), NULL);
+
+    // Delete configuration dialog hide
+    g_signal_connect ( button_delete_package_cancel, "clicked", G_CALLBACK ( delete_config_hide ), NULL);
+
     /********** Configuration buttons ********/
     button_reload_config = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_reload_config" ) );
 
@@ -179,14 +174,23 @@ int main( int argc, char **argv ) {
     button_iterate = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_iterate" ) );
 
     // Click button event handler
-    g_signal_connect ( button_iterate, "clicked", G_CALLBACK ( get_files ), NULL);
+    g_signal_connect ( button_iterate, "clicked", G_CALLBACK( get_files ), NULL);
+
+    /********* Files list **********/
+    buffer_file_list = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_file_list" ) );
+
+    /********* Make package button *********/
+    button_make_package = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_make_package" ) );
+
+    // Click button event handler
+    g_signal_connect ( button_make_package, "clicked", G_CALLBACK( make_package ), NULL );
   
     gtk_widget_show( window );
 
     // Populate select package combobox with data
     get_package_configs();
     init_filters();
-    gtk_main ();
+    gtk_main();
 
 	return 0;
 }
@@ -227,7 +231,7 @@ int get_package_configs() {
 		free( list[ n ] );
 	}
 
-	free( list );
+	g_free( list );
 
 	return 0;
 }
@@ -247,33 +251,63 @@ void show_error( char *message ) {
 	fputs( message, stderr );
 }
 
-// int usage() {
-// 	// printf("%.20s - %s\n", "exit", "exit function" );
-// 	exit( 0 );
-// }
-
 /**
  * Fills in files list. Iterate button click event handler
  */
 void get_files( void* widget, void* data ) {
+	if ( DEBUG ) print_color( B_CYAN, ">>>>>> GET PACKAGE FILES <<<<<<<<" );
+
 	include_file_temp = g_hash_table_lookup( config, "include_file" );
-	exclude_file_temp = g_hash_table_lookup( config, "include_file" );
-	include_folder_temp = g_hash_table_lookup( config, "include_file" );
-	exclude_folder_temp = g_hash_table_lookup( config, "include_file" );
-	include_regex_temp = g_hash_table_lookup( config, "include_file" );
-	exclude_regex_temp = g_hash_table_lookup( config, "include_file" );
+	exclude_file_temp = g_hash_table_lookup( config, "exclude_file" );
+	include_folder_temp = g_hash_table_lookup( config, "include_folder" );
+	exclude_folder_temp = g_hash_table_lookup( config, "exclude_folder" );
+	include_regex_temp = g_hash_table_lookup( config, "include_regex" );
+	exclude_regex_temp = g_hash_table_lookup( config, "exclude_regex" );
 	g_slist_free_full( files, (GDestroyNotify)g_free );
 
-	iterate( g_strdup( cwd ), (void*)&check_item, NULL, (void*)&on_iterate_error );
+	iterate( g_strdup( cwd ), check_item, NULL, on_iterate_error );
 
-	g_slist_free_full( include_file_temp, (GDestroyNotify)g_free );
-	g_slist_free_full( exclude_file_temp, (GDestroyNotify)g_free );
-	g_slist_free_full( include_folder_temp, (GDestroyNotify)g_free );
-	g_slist_free_full( exclude_folder_temp, (GDestroyNotify)g_free );
-	g_slist_free_full( include_regex_temp, (GDestroyNotify)g_free );
-	g_slist_free_full( exclude_regex_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( include_file_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( exclude_file_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( include_folder_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( exclude_folder_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( include_regex_temp, (GDestroyNotify)g_free );
+	// g_slist_free_full( exclude_regex_temp, (GDestroyNotify)g_free );
 
 	load_dependencies();
+	files_to_view();
+}
+
+/**
+ * Fills in view with package files
+ */
+void files_to_view() {
+	int debug = 0;
+
+	GSList *current = files;
+	GtkTextIter end;
+
+	char line[ path_max_size ];
+
+	if ( DEBUG || debug )print_color( B_GREEN, "files to view" ); 
+
+	gtk_text_buffer_set_text( buffer_file_list, "", -1 );
+
+	while ( current ) {
+		gtk_text_buffer_get_end_iter( buffer_file_list, &end );
+
+		memset( line, 0, path_max_size );
+		strncpy( line, current->data, strlen( current->data ) );
+		strcat( line, "\n" );
+
+		if ( DEBUG || debug )printf( "To buffer view: '%s'\n", line );
+
+		gtk_text_buffer_insert( buffer_file_list, &end, line, -1 );
+
+		current = current->next;
+	}
+
+	if ( DEBUG || debug )printf( "Files to view end\n" );
 }
 
 /**
@@ -283,7 +317,7 @@ int check_item( char *name, void* data ) {
 	if ( DEBUG )fprintf( stderr, "Start checking file %s\n", name );
 
 	if ( check_file( (char*)name ) ) {
-		if ( DEBUG )fprintf( stderr, "Passed check\n" );
+		if ( DEBUG )print_color( B_GREEN, "Passed check: %s\n", name );
 
 		files = g_slist_append( files, g_strdup( name ) );
 		total_size += filesize( name );
@@ -305,8 +339,10 @@ int check_source( char *name, void *data ) {
 	if ( DEBUG || debug )fprintf( stderr, "Add source file %s\n", name );
 
 	// If file doesn't exist already in list - add it
-	if ( -1 != g_slist_index( files, name ) ) {
-		files = g_slist_append( files, name );
+	if ( -1 == g_slist_index( files, name ) ) {
+		if ( DEBUG || debug )printf( "File is not in the list. Add it\n" );
+
+		files = g_slist_append( files, g_strdup( name ) );
 		total_size += filesize( name );
 		files_count++;
 	}
@@ -413,330 +449,6 @@ xmlNodePtr config_to_xml( char *name, GSList *l ) {
 }
 
 /**
- * Writes configuration from configuration structure into file
- *
- *
- */
-// int write_config_section( char* name, FILE* stream, struct llist* l ) {
-	// if ( NULL != l && l->first ) {
-	// 	l->current = l->first;
-
-	// 	fprintf( stream, "%s:\n", name );
-
-	// 	while( l->current ) {
-	// 		fprintf( stream, " - %s\n", l->current->as_string( l->current ) );
-	// 		l->current = l->current->next;
-	// 	}
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Mark start of delete configuration action
- *
- */
-// int start_del( struct llist* l ) {
-	// if ( l && l->first ) {
-	// 	printf(
-	// 		"Type a number of a record to be deleted\n"
-	// 		"To save changes type 's', to discard changes type 'q'\n"
-	// 	);
-
-	// 	print_del_list( l );
-		
-	// } else {
-	// 	printf( "List is empty\n" );
-
-	// 	return 1;
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Prints list of configuration list that can be deleted
- *
- */
-// int print_del_list( struct llist* l ) {
-	// if ( NULL == l || NULL == l->first ) return 1;
-
-	// l->current = l->first;
-
-	// while( l->current && l->current->name ) {
-	// 	if ( NULL != temp && NULL != temp->first && 0 == temp->has_value( l->current->name, temp ) ) {
-	// 		printf( "*" );
-
-	// 	} else {
-	// 		printf( " " );
-	// 	}
-
-	// 	printf( "[%.2s] - %s\n", l->current->name, l->current->as_string( l->current ) );
-	// 	l->current = l->current->next;
-	// }
-
-	// printf( "Remove item >> " );
-
-// 	return 0;
-// }
-
-/**
- * Marks start of add configuration action
- *
- */
-// int start_add( struct llist* l ) {
-	// printf( "Type in one item at line\n" );
-	// printf( "To save changes print 's', to discard changes - 'q'\n" );
-
-	// if ( NULL != l->first ) {
-	// 	printf( "Existing items:\n" );
-	// 	l->print( l );
-
-	// } else {
-	// 	printf( "List is empty\n" );
-	// }
-
-	// printf( "Add item >> " );
-
-// 	return 0;
-// }
-
-/**
- * Adds item to configuration list
- *
- */
-// int add_to(  char *item ) {
-	// if ( NULL != temp ) {
-	// 	printf( "Add item >> " );
-	// 	return temp->add( NULL, item, temp );
-	// }
-
-	// fprintf( stderr, "Failed to add item to list: list is missing" );
-
-// 	return 1;
-// }
-
-/**
- * Deletes item from configuration list
- *
- */
-// int del_from(  char *name, struct llist* l ) {
-	// if ( NULL != temp ) {
-	// 	temp->add( NULL, name, temp );
-	// 	printf( "\033[%dA", l->count( l ) + 1 );
-	// 	printf( "\033[100D" );
-	// 	print_del_list( l );
-	// 	printf( "\033[K" );
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Prints out a list of available commands
- *
- */
-// int show_commands() {
-	// char *line = malloc( win_size.ws_col + 1 );
-	// memset( line, '-', win_size.ws_col );
-	// line[ win_size.ws_col ] = '\0';
-
-	// printf(
-	// 	"%s\n" /* separator */
-
-	// 	"%2d - Add included directories\n"
-	// 	"%2d - Add excluded directories\n"
-	// 	"%2d - Delete included directories\n"
-	// 	"%2d - Delete excluded directories\n"
-
-	// 	"%2d - Add included files\n"
-	// 	"%2d - Add excluded files\n"
-	// 	"%2d - Delete included files\n"
-	// 	"%2d - Delete excluded files\n"
-
-	// 	"%2d - Add included regexp\n"
-	// 	"%2d - Add excluded regexp\n"
-	// 	"%2d - Delete included regexp\n"
-	// 	"%2d - Delete excluded regexp\n"
-
-	// 	"%2d - Iterate over FS\n"
-	// 	"%2d - Print files\n"
-	// 	"%2d - Print configurations\n"
-	// 	"%2d - Make package\n"
-
-	// 	"%2d - Set module name\n"
-	// 	"%2d - Set package major number\n"
-	// 	"%2d - Set package minor number\n"
-	// 	"%2d - Set package patch number\n"
-
-	// 	"%s\n" /* Separator */
-
-	// 	"Make your choice > ",
-
-	// 	line,
-
-	// 	C_ADD_INCL_FOLDER,
-	// 	C_ADD_EXCL_FOLDER,
-	// 	C_DEL_INCL_FOLDER,
-	// 	C_DEL_EXCL_FOLDER,
-
-	// 	C_ADD_INCL_FILE,
-	// 	C_ADD_EXCL_FILE,
-	// 	C_DEL_INCL_FILE,
-	// 	C_DEL_EXCL_FILE,
-
-	// 	C_ADD_INCL_REGEXP,
-	// 	C_ADD_EXCL_REGEXP,
-	// 	C_DEL_INCL_REGEXP,
-	// 	C_DEL_EXCL_REGEXP,
-
-	// 	C_ITERATE,
-	// 	C_PRINT_FILES,
-	// 	C_PRINT_CONFIG,
-	// 	C_MAKE,
-
-	// 	C_SET_NAME,
-	// 	C_SET_MAJOR,
-	// 	C_SET_MINOR,
-	// 	C_SET_PATCH,
-
-	// 	line
-	// );
-
-	// free( line );
-// }
-
-/**
- * Action switcher after action confirmation action (eg save, delete)
- *
- */
-// int confirmed_operation() {
-	// switch ( command ) {
-	// case C_ADD_INCL_FOLDER:
-	// 	add_to_config( include_dir );
-	// 	break;
-	// case C_DEL_INCL_FOLDER:
-	// 	remove_from_config( include_dir );
-	// 	break;
-	// case C_ADD_INCL_FILE:
-	// 	add_to_config( include_file );
-	// 	break;
-	// case C_DEL_INCL_FILE:
-	// 	remove_from_config( include_file );
-	// 	break;
-	// case C_ADD_INCL_REGEXP:
-	// 	add_to_config( include_regexp );
-	// 	break;
-	// case C_DEL_INCL_REGEXP:
-	// 	remove_from_config( include_regexp );
-	// 	break;
-	// case C_ADD_EXCL_FOLDER:
-	// 	add_to_config( exclude_dir );
-	// 	break;
-	// case C_DEL_EXCL_FOLDER:
-	// 	remove_from_config( exclude_dir );
-	// 	break;
-	// case C_ADD_EXCL_FILE:
-	// 	add_to_config( exclude_file );
-	// 	break;
-	// case C_DEL_EXCL_FILE:
-	// 	remove_from_config( exclude_file );
-	// 	break;
-	// case C_ADD_EXCL_REGEXP:
-	// 	add_to_config( exclude_regexp );
-	// 	break;
-	// case C_DEL_EXCL_REGEXP:
-	// 	remove_from_config( exclude_regexp );
-	// 	break;
-	// default:
-	// 	print_error( "Invalid command: %d\n", command );
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Merges config list with temporary configuration list
- *
- */
-// int add_to_config( struct llist* l ) {
-	// l->merge( temp, l );
-	// config_is_dirty = 1;
-
-// 	return 0;
-// }
-
-/**
- * Removes items from configuration list, which present in temporary configuration list
- *
- */
-// int remove_from_config( struct llist* l ) {
-	// if ( NULL != l && NULL != l->first ) {
-	// 	l->current = l->first;
-
-	// 	while( NULL != l->current ) {
-	// 		if ( 0 == temp->has_value( l->current->name, temp ) ) {
-	// 			l->remove( l->current->name, l );
-
-	// 			if ( NULL == l->current ) {
-	// 				break;
-
-	// 			} else {
-	// 				l->current = l->first;
-	// 				continue;
-	// 			}
-	// 		}
-
-	// 		l->current = l->current->next;
-	// 	}
-
-	// 	config_is_dirty = 1;
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Mark operation add ended
- *
- */
-// int end_operation() {
-	// temp->empty( temp );
-	// wait_confirm = 0;
-	// command = 0;
-	// save_me = 0;
-
-// 	return 0;
-// }
-
-/**
- * Reliable signal function from APU (restarts all interrupted system calls but SIGALARM)
- *
- */
-Sigfunc *signal( int signo, Sigfunc *func ) {
-	struct sigaction act, oact;
-
-	act.sa_handler = func;
-	sigemptyset( &act.sa_mask );
-	act.sa_flags = 0;
-
-	if ( signo == SIGALRM ) {
-		#ifdef SA_INTERRUPT
-		act.sa_flags |= SA_INTERRUPT;
-		#endif
-
-	} else {
-		act.sa_flags |= SA_RESTART;
-	}
-
-	if ( sigaction( signo, &act, &oact ) < 0 ) {
-		return( SIG_ERR );
-	}
-
-	return( oact.sa_handler );
-}
-
-/**
  * Interrupt signal handler
  *
  */
@@ -759,26 +471,27 @@ void int_handler( int s ) {
  */
 gboolean check_file( char *name ) {
 	int debug = 0;
+	int show = 0;
 
 	if ( DEBUG || debug )fprintf( stderr, "Start checking file: '%s'\n", name );
 
 	int max_incl_dir_length = 0;
 	int max_excl_dir_length = 0;
 
-	char *relative_file_name = &name[ strlen( cwd ) ];
+	char *relative_file_name = &name[ strlen( cwd ) + 1 ];
 	char *relative_folder_name;
 
 	if ( DEBUG )printf( "Relative file name: '%s'\n", relative_file_name );
 
 	// File is in the include list
 	if ( NULL != g_slist_find( include_file_temp, relative_file_name ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is in included files list\n" );
+		if ( DEBUG || debug || show )fprintf( stderr, "Is in included files list (%s)\n", name );
 		return TRUE;
 	}
 
 	// File is in the exclude list
 	if (  NULL != g_slist_find( exclude_file_temp, relative_file_name ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Is in excluded files list\n" );
+		if ( DEBUG || debug || show )fprintf( stderr, "Is in excluded files list(%s)\n", name );
 		return FALSE;
 	}
 
@@ -787,7 +500,7 @@ gboolean check_file( char *name ) {
 	if ( DEBUG )printf( "Relative folder: '%s'\n", relative_folder_name );
 
 	// If path has folder part
-	if ( "." != relative_folder_name ) {
+	if ( strncmp( ".", relative_folder_name, 1 ) != 0 ) {
 		if ( DEBUG || debug )fprintf( stderr, "Check as directory: '%s'\n", relative_folder_name );
 
 		collide_length( relative_folder_name, include_folder_temp, &max_incl_dir_length );
@@ -804,12 +517,12 @@ gboolean check_file( char *name ) {
 			);
 		
 		if ( max_incl_dir_length > 0 && max_incl_dir_length >= max_excl_dir_length ) {
-			if ( DEBUG || debug )fprintf( stderr, "Passed as directory\n");
+			if ( DEBUG || debug || show )fprintf( stderr, "Passed as directory (%s)\n", name );
 			return TRUE;
 		}
 
 		if ( max_excl_dir_length > 0 ) {
-			if ( DEBUG || debug )fprintf( stderr, "Rejected as directory\n" );
+			if ( DEBUG || debug || show )fprintf( stderr, "Rejected as directory (%s)\n", name );
 			return FALSE;
 		}
 
@@ -820,7 +533,7 @@ gboolean check_file( char *name ) {
 	if ( DEBUG || debug )fprintf( stderr, "Check against regex\n");
 
 	if ( TRUE == check_regexp( name, include_regex_temp ) && FALSE == check_regexp( name, exclude_regex_temp ) ) {
-		if ( DEBUG || debug )fprintf( stderr, "Passed as regex\n");
+		if ( DEBUG || debug || show )fprintf( stderr, "Passed as regex (%s)\n", name );
 
 		return TRUE;
 	}
@@ -834,12 +547,16 @@ gboolean check_file( char *name ) {
  * Returns longest path
  */
 void collide_length( char *name, GSList *list, int *max ) {
+	int debug = 0;
 	int current_str_len = 0;
 	*max = 0;
 	GSList *current = list;
 
 	while ( NULL != current ) {
-		current_str_len = strspn( name, current->data );
+		if ( strstr( name, current->data ) != NULL ) {
+			current_str_len = strlen( current->data );
+			if ( DEBUG || debug )printf( "Str1 '%s', str2: '%s', span: %i\n", name, (char*)current->data, current_str_len );
+		}
 
 		// We already have longer match. Skip
 		if ( *max < current_str_len ) {
@@ -851,104 +568,20 @@ void collide_length( char *name, GSList *list, int *max ) {
 }
 
 /**
- * Calculates strings' intersection length
- */
-// gboolean collide_span(  char *h,  char *n ) {
-// 	int i;
-// 	int c = 0;
-// 	int nl = strlen( n );
-// 	int hl = strlen( h );
-
-// 	if ( hl >= nl ) {
-// 		for( i = 0; i < nl; i++ ) {
-// 			if ( h[ i ] == n[ i ] ) {
-// 				c++;
-
-// 			} else {
-// 				break;
-// 			}
-// 		}
-// 	}
-
-// 	return c == nl ? 0 : 1;
-// }
-
-/**
- * Tests if regular expression matches the pattern
- * str - pointer to string to test
- * pattern - pointer to the pattern
- * m - array of regmatch_t structures
- * Returns 0 if match succeeded
- */
-// int match(  char* str,  char* pattern, regmatch_t *m, int flags ) {
-	// size_t c = NULL == m ? 0 : REGEX_MATCH_COUNT;
-	// int status;
-
-	// if ( DEBUG )fprintf( stderr, "Matching string '%s' against regex '%s'\n", str, pattern );
-
-	// if ( IS_EMPTY( str ) || IS_EMPTY( pattern ) ) {
-	// 	if ( DEBUG )fprintf( stderr, "One of operands is empty. Skip\n" );
-	// 	return 0;
-	// }
-
-	// regex_t *compilled = (regex_t*)malloc( sizeof ( regex_t ) );
-	// flags |= REG_EXTENDED;
-
-	// if ( NULL == compilled ) {
-	// 	print_error( "Failed to locate memory for regex_t structure" );
-	// }
-
-	// status = regcomp( compilled, pattern, flags );
-
-	// if ( 0 != status ) {
-	// 	print_error( get_regerror( status, compilled ) );
-	// }
-
-	// status = regexec( compilled, str, c, m, 0 );
-
-	// if ( REG_ESPACE == status ) {
-	// 	print_error( get_regerror( status, compilled ) );
-	// }
-
-	// regfree( compilled );
-	// free( compilled );
-
-	// if ( DEBUG )fprintf( stderr, "Match status: %d\n", status );
-
-// 	return status;
-// }
-
-/**
- * Returns error from regex library
- *
- */
-// char *get_regerror ( int errcode, regex_t *compiled ) {
-// 	size_t length = regerror ( errcode, compiled, NULL, 0 );
-// 	char *buffer = malloc ( length );
-
-// 	if ( NULL == buffer ) {
-// 		print_error( "Failed to allocate memory for regular expression error message" );
-// 	}
-
-// 	( void )regerror ( errcode, compiled, buffer, length );
-
-// 	return buffer;
-// }
-
-/**
  * Checks path against list of regexps
  *
  */
 gboolean check_regexp( char* str, GSList *list ) {
 	GSList *current = list;
+	int debug = 0;
 
-	if ( DEBUG )fprintf( stderr, "Checking file '%s' name against regex\n", str );
+	if ( DEBUG || debug )fprintf( stderr, "Checking file '%s' name against regex\n", str );
 
 	while ( NULL != current ) {
-		if ( DEBUG )fprintf( stderr, "Regex: '%s'\n", (char*)current->data );
+		if ( DEBUG || debug )fprintf( stderr, "Regex: '%s'\n", (char*)current->data );
 
 		if ( g_regex_match_simple ( current->data, str, 0, 0 ) ) {
-			if ( DEBUG )fprintf( stderr, "Match\n" );
+			if ( DEBUG || debug )fprintf( stderr, "Match\n" );
 
 			return TRUE;
 		}
@@ -956,7 +589,7 @@ gboolean check_regexp( char* str, GSList *list ) {
 		current = current->next;
 	}
 
-	if ( DEBUG )fprintf( stderr, "No match found\n" );
+	if ( DEBUG || debug )fprintf( stderr, "No match found\n" );
 
 	return FALSE;
 }
@@ -990,55 +623,6 @@ void end_clock( char *msg ) {
         ( en_cpu.tms_stime - st_cpu.tms_stime ) / (float)clockticks
     );
 }
-
-/**
- * Prints out contents of configuration file
- *
- */
-// int print_config() {
-	// FILE *stream = fopen( config_name, "r" );
-	// char buffer[ MAX_LINE ];
-
-	// if ( NULL != stream ) {
-	// 	while ( NULL != fgets( buffer, MAX_LINE, stream ) ) {
-	// 		if ( EOF == fputs( buffer, stdout ) ) {
-	// 			perror( "Print configuration" );
-	// 			exit( 1 );
-	// 		}
-	// 	}
-
-	// 	if ( ferror( stream ) ) {
-	// 		perror( "Print configuration" );
-	// 		exit( 1 );
-	// 	}
-
-	// 	fclose( stream );
-	// }
-
-// 	return 0;
-// }
-
-/**
- * Print in-memory list of package files
- *
- */
-// int print_files() {
-	// if ( NULL == files->first ) {
-	// 	printf( "List is empty\n" );
-
-	// } else {
-	// 	files->current = files->first;
-
-	// 	while ( files->current ) {
-	// 		printf( "[%3d] - %s\n", files->current->index, files->current->name );
-	// 		files->current = files->current->next;
-	// 	}
-
-	// 	files->current = files->first;
-	// }
-
-// 	return 0;
-// }
 
 /**
  * Populates static variables with current terminal window sizes
@@ -1087,16 +671,21 @@ int load_dependencies() {
 
 	if ( DEBUG || debug )fprintf( stderr, "Start loading dependencies\n" );
 
-	FILE *file; // File to search in
+	FILE *file;                         // File to search in
+
 	char *line = g_malloc0( MAX_LINE ); // Line from file
-	int max_lines = 200; // Max depth to look at
-	gboolean in_header = FALSE; // Flag to tell whether we are in script header
-	int c = 0; // Line count
-	char *source_name; // Name of source file got from script header
+	char *source_name, *sn;                  // Name of source file got from script header
+
+	gboolean in_header = FALSE;         // Flag to tell whether we are in script header
+
+	int max_lines = 200;                // Max depth to look at
+	int c = 0;                          // Line count
+	int is_free_match = 0;              // Flag to tell if matches_info structure needs to be emptied
+
 	GRegex *regex = g_regex_new( "\\*\\s+@source\\s+([^*]+)", 0, 0, NULL );
 	GMatchInfo *match_info;
+
 	GSList *current = files;
-	int is_free_match = 0; // Flag to tell if matches_info structure needs to be emptied
 
 	while ( current ) {
 		if ( DEBUG || debug )fprintf( stderr, "Iterate: '%s'\n", (char*)current->data );
@@ -1107,12 +696,15 @@ int load_dependencies() {
 
 			if ( NULL == ( file = fopen( current->data, "r" ) ) ) {
 				fprintf( stderr, "Failed to open file '%s' in %s:%i: %s\n", (char*)current->data, __FILE__, __LINE__, strerror( errno ) );
+				exit( 1 );
 			}
 
-			if ( DEBUG )fprintf( stderr, "Open file: '%s'\n", (char*)current->data );
+			if ( DEBUG || debug  )fprintf( stderr, "Open file: '%s'\n", (char*)current->data );
 
 			// Read up to max_line lines
 			while ( NULL != ( fgets( line, MAX_LINE, file ) ) ) {
+				line = g_strchug( line ); // Remove leading spaces
+
 				if ( DEBUG || debug )fprintf( stderr, "Line: '%s'", line );
 
 				if ( ++c > max_lines ) {
@@ -1120,22 +712,31 @@ int load_dependencies() {
 					exit( 1 );
 				}
 
-				line = g_strchug( line ); // Remove leading spaces
-
 				if ( in_header ) {
 					if ( 0 == strncmp( line, "*/", 2 ) ) {
 						if ( DEBUG || debug )fprintf( stderr, "Header closing tag\n" );
 						goto next_file;
 					}
 
-					is_free_match = 1;
+					is_free_match = 1; // Need to free match_info
 
 					if ( g_regex_match ( regex, line, 0, &match_info ) ) {
-						source_name = g_match_info_fetch( match_info, 1 ); // Will be freed in iterate function
+						sn = g_match_info_fetch( match_info, 1 ); // Will be freed in iterate function
+						g_strstrip( sn );
 
-						if ( NULL != source_name ) {
-							if ( DEBUG )printf( "Found source: '%s'\n", source_name );
-							iterate( source_name, &check_source, NULL, &on_iterate_error ); // Add to files list
+						if ( strlen( sn ) ) {
+							if ( DEBUG || debug )printf( "Found source: '%s'\n", sn );
+
+							// Source names are always relative
+							if ( strncmp( "/", sn, 1 ) != 0 ) {
+								source_name = g_build_filename( cwd, sn, NULL );
+								g_free( sn );
+
+							} else {
+								source_name = sn;
+							}
+
+							iterate( source_name, check_source, NULL, on_iterate_error ); // Add to files list
 
 						} else {
 							fprintf( stderr, "Failed to fetch source name from string '%s'\n", line );
@@ -1178,161 +779,21 @@ int load_dependencies() {
 
 	if ( is_free_match )
 		g_match_info_free (match_info);
+
 	g_free( line );
 	g_regex_unref (regex);
 }
 
 /**
- * Trims the string. Default behavior - trim whitespaces
- *
- */
-// char *trim( char *str,  char *ch ) {
-// 	return ltrim( rtrim( str, ch ), ch );
-// }
-
-/**
- * Trims left part of the string. Default behavior - trim whitespaces
- *
- */
-// char *ltrim( char *str,  char *ch ) {
-	// int len = strlen( str );
-	// int ch_len = 0;
-	// int i = 0;
-	// int y = 0;
-	// int flag = 1;
-	// char *t_str;
-
-	// if ( IS_EMPTY( str ) )return str;
-
-	// if ( NULL != ch ) {
-	// 	ch_len = strlen( ch );
-	// }
-
-	// for( i = 0; i < len && flag; i++ ) {
-	// 	flag = 0;
-
-	// 	if ( NULL == ch ) {
-	// 		if ( str[ i ] <= ' ' ) {
-	// 			flag = 1;
-	// 		}
-
-	// 	} else {
-	// 		for ( y = 0; y < ch_len; y++ ) {
-	// 			if ( str[ i ] == ch[ y ] ) {
-	// 				flag = 1;
-	// 				break;
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	// i--;
-	// t_str = malloc( len - i + 1 );
-
-	// if ( NULL == t_str ) {
-	// 	print_error( "Failed to allocate memory for temp string in ltrim function\n" );
-	// }
-
-	// memset( t_str, '\0', len - i + 1 );
-	// strncpy( t_str, &str[ i ], len - i );
-	// strncpy( str, t_str, len - 1 + 1 );
-	// free( t_str );
-
-// 	return str;
-// }
-
-/**
- * Trims right part of the string. Default behavior - trim whitespaces
- *
- */
-// char *rtrim( char *str,  char *ch ) {
-	// int len = strlen( str );
-	// int ch_len = 0;
-	// int i = 0;
-	// int y = 0;
-	// int flag = 1;
-	// char *p;
-
-	// if ( IS_EMPTY( str ) )return str;
-
-	// if ( NULL != ch ) {
-	// 	ch_len = strlen( ch );
-	// }
-
-	// for( p = &str[ len -1 ]; len >= 0 && flag; len--, p-- ) {
-	// 	flag = 0;
-
-	// 	if ( NULL == ch ) {
-	// 		if ( *p <= ' ' ) {
-	// 			flag = 1;
-	// 		}
-
-	// 	} else {
-	// 		for ( y = 0; y < ch_len; y++ ) {
-	// 			if ( *p == ch[ y ] ) {
-	// 				flag = 1;
-	// 				break;
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	// *( p + 2 ) = '\0';
-
-// 	return str;
-// }
-
-/**
- * Checks if entry is a regular file
- *
- */
-// int is_file(  char *name ) {
-// 	struct stat stat_buffer;
-
-// 	if ( lstat( name, &stat_buffer ) < 0 ) {
-// 		return 0;
-// 	}
-
-// 	return  S_ISREG( stat_buffer.st_mode );
-// }
-
-/**
- * Checks if an entry is a directory
- *
- */
-// int is_dir(  char *name ) {
-// 	struct stat stat_buffer;
-
-// 	if ( lstat( name, &stat_buffer ) < 0 ) {
-// 		return 0;
-// 	}
-
-// 	return  S_ISDIR( stat_buffer.st_mode );
-// }
-
-/**
- * Prepends CWD to the path
- *
- */
-// char* add_cwd( char* path ) {
-// 	char t[ path_max_size ];
-// 	// memset( t, '\0', path_max_size );
-// 	strcpy( t, cwd );
-// 	strcat( t, "/" );
-// 	strcat( t, path );
-// 	strcpy( path, t );
-
-// 	return path;
-// }
-
-/**
  * Makes package
  */
-int make_package() { 
+int make_package() {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>> MAKE PACKAGE <<<<<<<" );
+
 	int s;
 	char *upload_path = NULL;
 	char *pckg_name;
-	char *pckg_dir;
+	char *pckg_dir = NULL;
 	char version[ VERSION_SIZE ];
 	char *major, *minor, *patch;
 	GSList *list_major, *list_minor, *list_patch;
@@ -1348,6 +809,7 @@ int make_package() {
 	}
 
 	update_config_from_view();
+
 	code = g_hash_table_lookup( config, "code" );
 	list_major = g_hash_table_lookup( config, "major" );
 	list_minor = g_hash_table_lookup( config, "minor" );
@@ -1434,7 +896,7 @@ int make_package() {
 	fprintf( stderr, "Package was saved under version: %s.%s.%s\n", major, minor, patch );
 
 exit_point:
-	g_free( pckg_dir );
+	if ( NULL != pckg_dir) g_free( pckg_dir );
 	if ( NULL != upload_path ) g_free( upload_path );
 	if ( NULL != pckg_name ) g_free( pckg_name );
 
@@ -1671,74 +1133,6 @@ int run_zip( char *package_name ) {
 }
 
 /**
- * mkdir wrapper which makes directories recursively
- * Set errno as mkdir doest it
- * returns 0 on success -1 on error
- */
-// int make_dir( char *path, mode_t mode ) {
-// 	int debug = 0;
-
-// 	if ( DEBUG || debug ) fprintf( stderr, "Making directory '%s'...\n", path );
-
-// 	char t_path[ path_max_size ];
-// 	char t_cwd[ path_max_size ];
-// 	char *pos, *cur_pos;
-// 	char part[ path_max_size ];
-
-// 	int status = 0;
-
-	// CWD
-// 	memset( t_cwd, '\0', path_max_size );
-// 	getcwd( t_cwd, path_max_size );
-
-// 	if ( '/' == path[ 0 ] ) {
-// 		chdir( "/" );
-// 	}
-
-// 	// Copy of path name without leading and railing slashes
-// 	memset( t_path, '\0', path_max_size );
-// 	strncpy( t_path, path, path_max_size );
-// 	trim( t_path, "/" );
-
-// 	cur_pos = t_path;
-
-// 	if ( DEBUG || debug ) printf( "Makedir: Input folder: %s\n", t_path );
-
-// 	// Iterate over the path till we still have slash in it
-// 	while ( NULL != ( pos = strchr( cur_pos, '/' ) ) ) {
-// 		memset( part, '\0', path_max_size );
-// 		strncpy( part, cur_pos, pos - cur_pos );
-
-// 		if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
-
-// 		if( ( status = mkdir( part, mode ) ) < 0 && errno != EEXIST ) {
-// 			goto out;
-// 		}
-
-// 		cur_pos = ++pos;
-
-// 		// Chdir into newly created directory to create next directory relative to it
-// 		chdir( part );
-// 	}
-
-// 	// Last part (or the only one)
-// 	memset( part, '\0', path_max_size );
-// 	strncpy( part, cur_pos, &t_path[ strlen( t_path ) ] - cur_pos );
-
-// 	if ( DEBUG || debug ) printf( "Makedir: Creating folder: '%s'\n", part );
-
-// 	if( ( status = mkdir( part, mode ) ) < 0 && errno == EEXIST ) {
-// 		status = 0;
-// 		errno = 0;
-// 	}
-
-// out:
-// 	chdir( t_cwd );
-
-// 	return status;
-// }
-
-/**
  * Fills in temporary package structure before ZIPping
  * Implied CWD
  */
@@ -1911,72 +1305,6 @@ int make_file( char *name, mode_t mode ) {
 
 	return fd;
 }
-
-/**
- * Returns last part of a string (after last slash) as a copy
- * If no slashes are present returns copy of input string
- * On error returns NULL
- */
-// char *file_name( char *path ) {
-// 	char *p;
-// 	char *out;
-// 	int len = strlen( path ) + 1;
-
-// 	out = malloc( len );
-
-// 	if ( NULL == out ) {
-// 		fprintf( stderr, "file_name: Failed to allocate memory\n" );
-// 		return NULL;
-// 	}
-
-// 	memset( out, '\0', len );
-
-// 	p = strrchr( path, '/' );
-
-// 	if ( NULL == p ) {
-// 		strcpy( out, path );
-
-// 	} else {
-// 		strcpy( out, ++p );
-// 	}
-
-// 	return out;
-// }
-
-/**
- * Returns path name up to the last slash as a copy
- * If no slashes are present returns copy of input string
- * On error returns NULL
- */
-// char *dir_name( char *path ) {
-// 	int debug = 0;
-
-// 	char *p;
-// 	char *out;
-// 	int len = strlen( path ) + 1;
-
-// 	out = malloc( len );
-
-// 	if ( NULL == out ) {
-// 		fprintf( stderr, "dir_name: Failed to allocate memory\n" );
-// 		return NULL;
-// 	}
-
-// 	memset( out, '\0', len );
-
-// 	p = strrchr( path, '/' );
-
-// 	if ( NULL == p ) {
-// 		strcpy( out, path );
-
-// 	} else {
-// 		strncpy( out, path, p - &path[ 0 ] );
-// 	}
-
-// 	if ( DEBUG || debug )fprintf( stderr, "Path '%s' resolved to directory name '%s'\n", path, out );
-
-// 	return out;
-// }
 
 /**
  * Scan file and fill in structures of translations
@@ -2172,7 +1500,7 @@ int save_translation( char *name, GSList *l ) {
 
 	translation_folder = get_common_dir();
 	code = get_code();
-	file_name = Strcat( code, ".php" );
+	file_name = Strcat( code, ".php", NULL );
 
 	from_name = g_build_filename( cwd, name, "/language/en-gb/", translation_folder, file_name, NULL );
 	to_name = g_build_filename( cwd, pckg_tmp_dir, upload_folder, name, "/language/en-gb/", translation_folder, file_name, NULL );
@@ -2343,50 +1671,6 @@ int init_filters() {
 }
 
 /**
- * Returns pointer to list of matches gotten from match structure of regex
- */
-// struct llist *get_matches( const char *str ) {
-// 	int debug = 0;
-
-// 	size_t str_len = strlen( str ) + 1;
-// 	int reg_len, i;
-
-// 	if ( DEBUG || debug ) fprintf( stderr, "Start fetching matches form string '%s' with the length: %ld\n", str, str_len );
-
-// 	char* t_line = malloc( str_len );
-
-// 	if ( NULL == t_line ) {
-// 		print_error( "get_matches: failed to allocate memory" );
-// 	}
-
-// 	struct llist *matches;
-// 	matches = init_llist();
-
-// 	for ( i = 0; i < REGEX_MATCH_COUNT, m[ i ].rm_so >= 0; i++ ) {
-// 		if ( -1 != m[ i ].rm_so ) {
-
-// 			if ( DEBUG || debug ) fprintf( stderr, "Match #%d\n", i  );
-// 			if ( DEBUG || debug ) fprintf( stderr, "Match start: %d, match end: %d\n", m[ i ].rm_so, m[ i ].rm_eo );
-
-// 			memset( t_line, '\0', str_len );
-// 			reg_len = m[ i ].rm_eo - m[ i ].rm_so;
-
-// 			if ( DEBUG || debug ) fprintf( stderr, "Copying string from offset %d %d characters length\n", m[ i ].rm_so, reg_len );
-
-// 			strncpy( t_line, &str[ m[ i ].rm_so ], reg_len );
-
-// 			if ( DEBUG || debug ) fprintf( stderr, "Match value: '%s'\n", t_line );
-
-// 			matches->add( NULL, t_line, matches );
-// 		}
-// 	}
-
-// 	free( t_line );
-
-// 	return matches;
-// }
-
-/**
  * FS iterator callback to empty a folder. Unlinks files
  */
 int del_file_cb( char *name, void *data ) {
@@ -2475,11 +1759,6 @@ int make_oc20() {
 
 	current = files;
 
-	// if ( -1 == chdir( t_cwd ) ) {
-	// 	fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", t_cwd, strerror( errno ) );
-	// 	exit( 1 );
-	// }
-
 	while ( NULL != current ) {
 
 		if ( NULL != ( p = strstr( current->data, "/controller/extension/" ) ) ) {
@@ -2566,11 +1845,6 @@ int make_oc20() {
 
 	// Remove all empty directories
 	iterate( g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL ), NULL, del_empty_dirs_cb, on_iterate_error );
-
-	// if ( -1 == chdir( cwd ) ) {
-	// 	fprintf( stderr, "make_oc20: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
-	// 	exit( 1 );
-	// }
 
 	return 0;
 }
@@ -2915,13 +2189,6 @@ int make_vqmod() {
 	return 0;
 }
 
-// int set_config_name() {
-// 	strcat( config_name, "_" );
-// 	strcat( config_name, code );
-
-// 	return 0;
-// }
-
 /**
  * Parses configuration file and fills in configuration container
  */
@@ -3034,8 +2301,9 @@ int xml_to_config( char *name, xmlNodePtr root ) {
 	xmlNodePtr cur = root->xmlChildrenNode;
 
 	while ( cur != NULL ) {
-		if ( strlen( g_strstrip( g_strdup( xmlNodeGetContent( cur ) ) ) ) ) {
-			value = g_strdup( xmlNodeGetContent( cur ) );
+		value = g_strdup( xmlNodeGetContent( cur ) );
+
+		if ( strlen( g_strstrip( value ) ) ) {
 
 			if ( DEBUG || debug ) fprintf( stderr, "Add value '%s' to list\n", value );
 
@@ -3054,12 +2322,9 @@ int xml_to_config( char *name, xmlNodePtr root ) {
 }
 
 /**
- * Get configuration data from config file and put it into inner storage plus fill in corresponding inputs 
- * Change combobox event handler
+ * Initializes hash config to store package configuration data
  */
-void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
-	if ( DEBUG )print_color( B_CYAN, ">>>>>> PACKAGE SELECTED (fill_in_config) <<<<<<\n" );
-
+void init_config_hash() {
 	GSList
 		*include_folder = NULL,
 		*exclude_folder = NULL,
@@ -3072,18 +2337,13 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 		*minor = NULL,
 		*patch = NULL;
 
-	if ( DEBUG )printf( "Fetching config data\n" );
+	if ( DEBUG )printf( "Initializing configuration... \n" );
 
-	// Free previous data
 	if ( NULL != config ) {
-		if ( DEBUG )printf( "Clearing previous data\n" );
+		if ( DEBUG )printf( "Destroying hash table... \n" );
 		g_hash_table_destroy( config );
-
-	} else {
-		printf( "Nothing to free\n" );
 	}
 
-	char *name = g_malloc0( path_max_size );
 	config = g_hash_table_new_full( g_str_hash, g_str_equal, (GDestroyNotify)config_key_clean, (GDestroyNotify)config_value_clean );
 
 	g_hash_table_insert( config, g_strdup( "include_folder" ), include_folder );
@@ -3096,20 +2356,6 @@ void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
 	g_hash_table_insert( config, g_strdup( "major" ), major );
 	g_hash_table_insert( config, g_strdup( "minor" ), minor );
 	g_hash_table_insert( config, g_strdup( "patch" ), patch );
-
-	// Get file name from combobox
-	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
-
-	if ( DEBUG )printf( "Config name from combobox: %s\n", name  );
-
-	// Fill in config structure from config file
-	parse_config( name );
-	g_free( name );
-
-	// Update configuration tab
-	update_config_view();
-
-	if ( DEBUG )printf( "Fill in config end\n" );
 }
 
 /**
@@ -3126,7 +2372,34 @@ void config_key_clean( gpointer key ) {
 void config_value_clean( gpointer value ) {
 	if ( DEBUG )print_color( B_GREEN, "config_value_clean: Request to destroy hash value [%p]\n", value );
 	g_slist_free_full ( value, (GDestroyNotify)g_free );
+}
 
+/**
+ * Get configuration data from config file and put it into inner storage plus fill in corresponding inputs 
+ * Change combobox event handler
+ */
+void fill_in_config( GtkComboBox *widget, gpointer user_data ) {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>> PACKAGE SELECTED (fill_in_config) <<<<<<\n" );
+
+	init_config_hash();
+
+	if ( DEBUG )printf( "Fetching config data\n" );
+
+	char *name = g_malloc0( path_max_size );
+
+	// Get file name from combobox
+	name = gtk_combo_box_text_get_active_text( GTK_COMBO_BOX_TEXT( widget ) );
+
+	if ( DEBUG )printf( "Config name from combobox: %s\n", name  );
+
+	// Fill in config structure from config file
+	parse_config( name );
+	g_free( name );
+
+	// Update configuration tab
+	update_config_view();
+
+	if ( DEBUG )printf( "Fill in config end\n" );
 }
 
 /**
@@ -3210,7 +2483,7 @@ void update_config_view() {
 		dump_slist( include_file );
 	}
 
-	g_slist_foreach( include_file, &fill_in_input_buffer, buffer_include_file );
+	g_slist_foreach( include_file, fill_in_input_buffer, buffer_include_file );
 
 	// Excluded files
 	if ( DEBUG ) {
@@ -3218,7 +2491,7 @@ void update_config_view() {
 		dump_slist( exclude_file );
 	}
 
-	g_slist_foreach( exclude_file, &fill_in_input_buffer, buffer_exclude_file );
+	g_slist_foreach( exclude_file, fill_in_input_buffer, buffer_exclude_file );
 
 	// Included folders
 	if ( DEBUG ) {
@@ -3226,7 +2499,7 @@ void update_config_view() {
 		dump_slist( include_folder );
 	}
 
-	g_slist_foreach( include_folder, &fill_in_input_buffer, buffer_include_folder );
+	g_slist_foreach( include_folder, fill_in_input_buffer, buffer_include_folder );
 
 	// Excluded folders
 	if ( DEBUG ) {
@@ -3234,7 +2507,7 @@ void update_config_view() {
 		dump_slist( exclude_folder );
 	}
 
-	g_slist_foreach( exclude_folder, &fill_in_input_buffer, buffer_exclude_folder );
+	g_slist_foreach( exclude_folder, fill_in_input_buffer, buffer_exclude_folder );
 
 	// Included regex
 	if ( DEBUG ) {
@@ -3242,14 +2515,14 @@ void update_config_view() {
 		dump_slist( include_regex );
 	}
 
-	g_slist_foreach( include_regex, &fill_in_input_buffer, buffer_include_regex );
+	g_slist_foreach( include_regex, fill_in_input_buffer, buffer_include_regex );
 
 	if ( DEBUG ) {
 		printf( "Set excluded regex\n" );
 		dump_slist( exclude_regex );
 	}
 
-	g_slist_foreach( exclude_regex, &fill_in_input_buffer, buffer_exclude_regex );
+	g_slist_foreach( exclude_regex, fill_in_input_buffer, buffer_exclude_regex );
 
 	if ( DEBUG )printf( "View has been updated\n" ); 
 }
@@ -3261,8 +2534,8 @@ void fill_in_input_buffer( void *text, void *buffer ) {
 	if ( DEBUG )print_color( B_GREEN, "fill_in_input_buffer: Stat\n" );
 
 	g_return_if_fail( buffer != NULL );
-	GtkTextIter *start;
-	GtkTextIter *end;
+	GtkTextIter start;
+	GtkTextIter end;
 	char *new_text;
 
 	// Empty list
@@ -3270,25 +2543,20 @@ void fill_in_input_buffer( void *text, void *buffer ) {
 
 	if ( DEBUG )printf( "Adding text '%s' to text buffer\n", (char*)text );
 
-	start = g_malloc0( sizeof( GtkTextIter ) );
-	end = g_malloc0( sizeof( GtkTextIter ) );
-
-	gtk_text_buffer_get_bounds( buffer, start, end );
+	gtk_text_buffer_get_start_iter( buffer, &start );
+	gtk_text_buffer_get_end_iter( buffer, &end );
 
 	// Not first line - prepend newline character
-	if ( !gtk_text_iter_equal( start, end ) ) {
+	if ( !gtk_text_iter_equal( &start, &end ) ) {
 		new_text = g_malloc0( strlen( text ) + 2 );
 		memcpy( new_text, "\n", 1 );
 		strncat( new_text, text, strlen( text ) );
-		gtk_text_buffer_insert( buffer, end, new_text, -1 );
+		gtk_text_buffer_insert( buffer, &end, new_text, -1 );
 		g_free( new_text );
 
 	} else {
-		gtk_text_buffer_insert( buffer, end, text, -1 );
+		gtk_text_buffer_insert( buffer, &end, text, -1 );
 	}
-
-	g_free( start );
-	g_free( end );
 }
 
 /**
@@ -3320,16 +2588,14 @@ void clear_config_buffers() {
 		NULL
 	};
 
-	GtkTextIter *start;
-	GtkTextIter *end;
+	GtkTextIter start;
+	GtkTextIter end;
 	int i = 0;
 
-	start = g_malloc0( sizeof( GtkTextIter ) );
-	end = g_malloc0( sizeof( GtkTextIter ) );
-
 	while ( list[ i ] != NULL ) {
-		gtk_text_buffer_get_bounds( list[ i ], start, end );
-		gtk_text_buffer_delete ( list[ i ], start, end );
+		gtk_text_buffer_get_start_iter( list[ i ], &start );
+		gtk_text_buffer_get_end_iter( list[ i ], &end );
+		gtk_text_buffer_delete ( list[ i ], &start, &end );
 		i++;
 	}
 
@@ -3340,25 +2606,10 @@ void clear_config_buffers() {
 	gtk_spin_button_set_value( input_major, 0 );
 	gtk_spin_button_set_value( input_minor, 0 );
 	gtk_spin_button_set_value( input_patch, 0 );
-
-	g_free( start );
-	g_free( end );
 }
 
-/**
- * Fills in list of filters name for further use
- */
-// void init_filter_names() {
-// 	filter_names = g_slist_append( NULL, g_strdup( "include_file" ) );
-// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_file" ) );
-// 	filter_names = g_slist_append( filter_names, g_strdup( "include_folder" ) );
-// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_folder" ) );
-// 	filter_names = g_slist_append( filter_names, g_strdup( "include_regex" ) );
-// 	filter_names = g_slist_append( filter_names, g_strdup( "exclude_regex" ) );
-// }
-
 /** 
- * Reloads lost of configuration files from the disk
+ * Reloads list of configuration files from the disk
  */
 void reload_config( GtkButton *button, gpointer data ) {
 	if ( DEBUG )print_color( B_CYAN, ">>>>>>> RELOAD CONFIGS (reload_config)<<<<<<<\n" );
@@ -3415,18 +2666,22 @@ void save_config( GtkButton *button, gpointer data ) {
 	xmlAddChild( root, config_to_xml( "include_regex", include_regex ) );
 	xmlAddChild( root, config_to_xml( "exclude_regex", exclude_regex ) );
 
+	if ( DEBUG )printf( "Adding code value '%s'...\n", (char*)code->data );
 	child = xmlNewNode( NULL, "code" );
 	xmlNodeAddContent( child, code->data );
 	xmlAddChild( root, child );
 
+	if ( DEBUG )printf( "Adding major number value '%s'...\n", (char*)major->data );
 	child = xmlNewNode( NULL, "major" );
 	xmlNodeAddContent( child, major->data );
 	xmlAddChild( root, child );
 
+	if ( DEBUG )printf( "Adding minor number value '%s'...\n", (char*)minor->data );
 	child = xmlNewNode( NULL, "minor" );
 	xmlNodeAddContent( child, minor->data );
 	xmlAddChild( root, child );
 
+	if ( DEBUG )printf( "Adding patch number value '%s'...\n", (char*)patch->data );
 	child = xmlNewNode( NULL, "patch" );
 	xmlNodeAddContent( child, patch->data );
 	xmlAddChild( root, child );
@@ -3460,10 +2715,12 @@ void save_config( GtkButton *button, gpointer data ) {
  * Returns package name
  */
 char *get_package_name() {
+	if ( DEBUG )printf( "Getting package name\n" );
+
 	g_return_val_if_fail( NULL != input_code, NULL );
 	g_return_val_if_fail( NULL != select_package, NULL );
 
-	char *name;
+	char *name, *hidden_name;
 
 	name = gtk_combo_box_text_get_active_text( select_package );
 
@@ -3475,9 +2732,12 @@ char *get_package_name() {
 			return NULL;
 		}
 
-		name = g_realloc( name, strlen( name ) + 9 ); // + .package suffix
-		g_strlcat( name, ".package", strlen( name ) + 9 );
+		hidden_name = Strcat( ".", name, ".package", NULL );
+		g_free( name );
+		name = hidden_name;
 	}
+
+	if ( DEBUG )printf("Package name is: '%s'\n", name );
 
 	return name;
 }
@@ -3491,11 +2751,19 @@ void delete_config_dialog_show( GtkButton *button, gpointer data ) {
 }
 
 /**
- * Deletes configuration file from the disk
+ * Delete configuration file button click handler
  */
 void delete_config( GtkButton *button, gpointer data ) {
 	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> DELETE CONFIG <<<<<<<<\n");
+	gtk_widget_show( GTK_WIDGET( delete_package_confirm ) );
+	
+}
 
+/**
+ * Delete configuration dialog OK button click handler
+ */
+void _delete_config( GtkButton *button, gpointer data ) {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> DELETE CONFIG CONFIRM <<<<<<<<\n");
 	gtk_widget_hide( GTK_WIDGET( delete_package_confirm ) );
 
 	g_return_if_fail( NULL != select_package );
@@ -3507,6 +2775,14 @@ void delete_config( GtkButton *button, gpointer data ) {
 	}
 
 	g_free( name );
+}
+
+/**
+ * Delete configuration dialog CANCEL button click handler
+ */
+void delete_config_hide( GtkButton *button, gpointer data ) {
+	if ( DEBUG )print_color( B_CYAN, ">>>>>>>> DELETE CONFIG HIDE <<<<<<<<\n");
+	gtk_widget_hide( GTK_WIDGET( delete_package_confirm ) );
 }
 
 /**
@@ -3531,6 +2807,8 @@ void update_config_from_view() {
 		*new_exclude_folder = NULL,
 		*new_include_regex  = NULL,
 		*new_exclude_regex  = NULL;
+
+	init_config_hash();
 
 	// Check view controls
 	g_return_if_fail( NULL != config );
@@ -3568,16 +2846,16 @@ void update_config_from_view() {
 	g_hash_table_insert( config, g_strdup( "exclude_file" ), text_buffer_to_slist( buffer_exclude_file, new_exclude_file ) );
 
 	// Update package included files
-	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+	g_hash_table_insert( config, g_strdup( "include_folder" ), text_buffer_to_slist( buffer_include_folder, new_include_folder ) );
 
 	// Update package included files
-	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+	g_hash_table_insert( config, g_strdup( "exclude_folder" ), text_buffer_to_slist( buffer_exclude_folder, new_exclude_folder ) );
 
 	// Update package included files
-	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+	g_hash_table_insert( config, g_strdup( "include_regex" ), text_buffer_to_slist( buffer_include_regex, new_include_regex ) );
 
 	// Update package included files
-	g_hash_table_insert( config, g_strdup( "include_file" ), text_buffer_to_slist( buffer_include_file, new_include_file ) );
+	g_hash_table_insert( config, g_strdup( "exclude_regex" ), text_buffer_to_slist( buffer_exclude_regex, new_exclude_regex ) );
 }
 
 /**
@@ -3591,13 +2869,14 @@ GSList *text_buffer_to_slist( GtkTextBuffer* buffer, GSList *list ) {
 	gchar *text;
 	gchar **parts;
 	gchar **p;
+	char *line;
 
 	gtk_text_buffer_get_start_iter( buffer, &start );
 	gtk_text_buffer_get_end_iter( buffer, &end );
 
 	text = gtk_text_buffer_get_text( buffer, &start, &end, FALSE );
 
-	if ( DEBUG )g_print( "Value: %s\n", text );
+	if ( DEBUG )g_print( "Value: '%s'\n", text );
 
 	parts = g_strsplit( text, "\n", -1 );
 
@@ -3606,7 +2885,16 @@ GSList *text_buffer_to_slist( GtkTextBuffer* buffer, GSList *list ) {
 	p = parts;
 
 	while( *p != NULL ) {
-		list = g_slist_append( list, g_strdup( *p ) );
+		line = g_strstrip( *p );
+
+		if ( IS_EMPTY( line ) ) {
+			if( DEBUG )printf( "Buffer row is empty. Skip\n" );
+			p++;
+
+			continue;
+		}
+
+		list = g_slist_append( list, g_strdup( line ) );
 		p++;
 	}
 
@@ -3616,4 +2904,6 @@ GSList *text_buffer_to_slist( GtkTextBuffer* buffer, GSList *list ) {
 	return list;
 }
 
-
+void print_error( char *error ) {
+	fprintf( stderr, "%s\n", error );
+}

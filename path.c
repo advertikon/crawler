@@ -4,7 +4,6 @@
  */
 
 #include "path.h"
-#include "error.h"
 
 static GHashTable *stat_cache = NULL;
 int is_stat_cache_inited = 0;
@@ -103,7 +102,7 @@ GSList* Scandir( char *dirname ) {
  */
 void dump_slist( GSList *list ) {
 	GSList *current = list;
-	printf( "\nGSList contents (%p):\n", current );
+	printf( "\nGSList contents [%i] (%p):\n", g_slist_length( current ), current );
 
 	if ( NULL == list ) return;
 
@@ -319,34 +318,37 @@ size_t filesize( char *name ) {
  */
 char *Strcat( char *str, ... ) {
 	char *temp1, *temp2;
-	size_t size;
+	size_t size, temp_size;
 	char *ret;
 	char *p;
+	int realloc_multy = 1;
 
 	va_list args;
 	va_start( args, str );
 
 	size = strlen( str );
-	size_t temp_size = size + 100;
+	temp_size = size + 100;
 
 	temp1 = g_malloc0( temp_size + 1 );
 	temp2 = g_malloc( 1 );
 	strncpy( temp1, str, size );
-
+;
 	while ( NULL != ( p = va_arg( args, char* ) ) ) {
 		size += strlen( p );
 
 		if ( size > temp_size ) {
 			temp2 = g_realloc( temp2, temp_size + 1 );
 			strncpy( temp2, temp1, temp_size );
-			temp_size = size + 1000;
+			temp_size = size << realloc_multy++;
 			temp1 = g_realloc( temp1, temp_size + 1 );
 		}
+
+		strncat( temp1, p, strlen( p ) );
 	}
 
-	ret = g_malloc0( size + 1 );
+	ret = g_malloc( size + 1 );
 	strcpy( ret, temp1 );
-	
+
 	va_end( args );
 
 	g_free( temp1 );
@@ -377,7 +379,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 
 	if ( debug )fprintf( stderr, "Iterate: '%s'\n", path );
 
-	if ( G_DIR_SEPARATOR_S != &path[ 0 ] ) {
+	if ( strncmp( G_DIR_SEPARATOR_S, path, 1 ) != 0 ) {
 		fprintf( stderr, "Path need to be absolute (%s). In %s:%i\n", path, __FILE__, __LINE__ );
 		is_error = TRUE;
 		goto exit_point;
@@ -438,7 +440,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 		closedir( dir );
 
 	} else {
-		print_error( "%s is not a file nor a directory\n", path );
+		fprintf( stderr, "%s is not a file nor a directory\n", path );
 		is_error = TRUE;
 		goto exit_point;
 	}
@@ -447,11 +449,35 @@ exit_point:
 	g_free( path );
 	g_free( stat_buffer );
 
-	if ( NULL != dir ) g_free( dir );
-
 	if ( is_error ) {
 		return 1;
 	}
 
 	return 0;
+}
+
+/**
+ * Reliable signal function from APU (restarts all interrupted system calls but SIGALARM)
+ */
+Sigfunc *signal( int signo, Sigfunc *func ) {
+	struct sigaction act, oact;
+
+	act.sa_handler = func;
+	sigemptyset( &act.sa_mask );
+	act.sa_flags = 0;
+
+	if ( signo == SIGALRM ) {
+		#ifdef SA_INTERRUPT
+		act.sa_flags |= SA_INTERRUPT;
+		#endif
+
+	} else {
+		act.sa_flags |= SA_RESTART;
+	}
+
+	if ( sigaction( signo, &act, &oact ) < 0 ) {
+		return( SIG_ERR );
+	}
+
+	return( oact.sa_handler );
 }

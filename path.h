@@ -14,6 +14,7 @@
 #include <string.h>
 #include <wchar.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #ifdef PATH_MAX
 	static long pathmax = PATH_MAX;
@@ -31,6 +32,7 @@
 #define B_WHITE  "\e[1;37m"
 
 typedef int (*cb)( char*, void* );
+typedef void Sigfunc( int );
 
 static long posix_version = 0;
 static long xsi_version = 0;
@@ -53,7 +55,7 @@ gboolean is_dir( char* );
 gboolean is_file( char*);
 void clean_stat_cache( char* );
 size_t filesize( char* );
-char *Strcat( char*, ... );
+char *Strcat( char*, ... ) G_GNUC_NULL_TERMINATED;
 int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
 
 #endif

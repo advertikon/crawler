@@ -483,13 +483,12 @@
                 <property name="can_focus">False</property>
                 <child>
                   <object class="GtkButton" id="button_iterate">
-                    <property name="label">gtk-media-play</property>
+                    <property name="label">Collect files</property>
                     <property name="width_request">100</property>
                     <property name="height_request">40</property>
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
-                    <property name="use_stock">True</property>
                     <property name="xalign">0.39000004529953003</property>
                   </object>
                   <packing>
@@ -498,29 +497,39 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkTextView" id="textview1">
-                    <property name="width_request">200</property>
-                    <property name="height_request">200</property>
+                  <object class="GtkScrolledWindow" id="scrolledwindow1">
+                    <property name="width_request">550</property>
+                    <property name="height_request">520</property>
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
-                    <property name="buffer">buffer_file_list</property>
+                    <property name="shadow_type">in</property>
+                    <child>
+                      <object class="GtkTextView" id="textview1">
+                        <property name="width_request">200</property>
+                        <property name="height_request">200</property>
+                        <property name="visible">True</property>
+                        <property name="can_focus">True</property>
+                        <property name="buffer">buffer_file_list</property>
+                      </object>
+                    </child>
                   </object>
                   <packing>
-                    <property name="x">266</property>
+                    <property name="x">134</property>
                     <property name="y">51</property>
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkImage" id="image3">
+                  <object class="GtkButton" id="button_make_package">
+                    <property name="label" translatable="yes">Make package</property>
                     <property name="width_request">100</property>
-                    <property name="height_request">80</property>
+                    <property name="height_request">40</property>
                     <property name="visible">True</property>
-                    <property name="can_focus">False</property>
-                    <property name="icon_name">audio-card</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">True</property>
                   </object>
                   <packing>
-                    <property name="x">590</property>
-                    <property name="y">164</property>
+                    <property name="x">10</property>
+                    <property name="y">66</property>
                   </packing>
                 </child>
               </object>
@@ -546,7 +555,7 @@
               <object class="GtkLabel" id="label3">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
-                <property name="label" translatable="yes">Package</property>
+                <property name="label" translatable="yes">Nope</property>
               </object>
               <packing>
                 <property name="position">2</property>
@@ -631,15 +640,5 @@
         </child>
       </object>
     </child>
-  </object>
-  <object class="GtkImage" id="image1">
-    <property name="visible">True</property>
-    <property name="can_focus">False</property>
-    <property name="stock">gtk-missing-image</property>
-  </object>
-  <object class="GtkImage" id="image2">
-    <property name="visible">True</property>
-    <property name="can_focus">False</property>
-    <property name="stock">gtk-missing-image</property>
   </object>
 </interface>
