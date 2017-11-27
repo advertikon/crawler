@@ -23,7 +23,7 @@ GSList *filter_names = NULL;
 GSList *filters = NULL;
 
 // List of package's files
-GSList *files = NULL;
+GSList *files;
 
 // Lists to store filters temporary during file system iteration to boost up performance
 GSList *include_file_temp;
@@ -264,15 +264,9 @@ void get_files( void* widget, void* data ) {
 	include_regex_temp = g_hash_table_lookup( config, "include_regex" );
 	exclude_regex_temp = g_hash_table_lookup( config, "exclude_regex" );
 	g_slist_free_full( files, (GDestroyNotify)g_free );
+	files = NULL;
 
 	iterate( g_strdup( cwd ), check_item, NULL, on_iterate_error );
-
-	// g_slist_free_full( include_file_temp, (GDestroyNotify)g_free );
-	// g_slist_free_full( exclude_file_temp, (GDestroyNotify)g_free );
-	// g_slist_free_full( include_folder_temp, (GDestroyNotify)g_free );
-	// g_slist_free_full( exclude_folder_temp, (GDestroyNotify)g_free );
-	// g_slist_free_full( include_regex_temp, (GDestroyNotify)g_free );
-	// g_slist_free_full( exclude_regex_temp, (GDestroyNotify)g_free );
 
 	load_dependencies();
 	files_to_view();
@@ -698,6 +692,8 @@ int load_dependencies() {
 				fprintf( stderr, "Failed to open file '%s' in %s:%i: %s\n", (char*)current->data, __FILE__, __LINE__, strerror( errno ) );
 				exit( 1 );
 			}
+
+			c = 0;
 
 			if ( DEBUG || debug  )fprintf( stderr, "Open file: '%s'\n", (char*)current->data );
 
