@@ -50,7 +50,7 @@ int fill_translation( FILE*, char* );
 int run_filters( void );
 int fetch_translation( FILE*, GSList*, GSList*, gboolean );
 int init_filters( void );
-int get_version( void );
+int get_version( int*, int*, int* );
 char *get_package_dir( void );
 int del_file_cb( char*, void* );
 int del_dir_cb( char*, void* );
@@ -75,7 +75,6 @@ void update_config_view();
 void fill_in_input_buffer( void*, void* );
 void destroy_list( gpointer );
 void clear_config_buffers( void );
-// void init_filter_names( void );
 void config_value_clean( gpointer );
 void config_key_clean( gpointer );
 void reload_config( GtkButton *button, gpointer );
@@ -102,5 +101,4 @@ void files_to_view( void );
 #define VERSION_SIZE 10
 #define BUFF_SIZE 4096
 
-#define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
 #define N_LEN( n ) ( ( ( 0 == n ) ? 1 : ( ( 0 == ( n % 10 ) ) ? ceil( log10( n ) ) + 1 : ceil( log10( n ) ) ) ) )

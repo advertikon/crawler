@@ -4,7 +4,7 @@ char* code;
 char *pckg_tmp_dir = ".tpm_pckg/";
 char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
-char *pckg_name_templ = "%s-%s-%s.%s.%s.ocmod.zip";
+char *pckg_name_templ = "%s-%s-%i.%i.%i.ocmod.zip";
 char *pckg_name_regex = "%s-[^-]+-([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.ocmod\\.zip";
 char *lang_prefix_23 = "language/en-gb/";
 char *lang_prefix_20 = "language/english/";
@@ -784,19 +784,21 @@ int load_dependencies() {
  * Makes package
  */
 int make_package() {
-	if ( DEBUG )print_color( B_CYAN, ">>>>>>> MAKE PACKAGE <<<<<<<" );
+	int debug = 1;
 
-	int s;
+	if ( DEBUG || debug )print_color( B_CYAN, ">>>>>>> MAKE PACKAGE <<<<<<<" );
+
 	char *upload_path = NULL;
 	char *pckg_name;
 	char *pckg_dir = NULL;
 	char version[ VERSION_SIZE ];
-	char *major, *minor, *patch;
+
 	GSList *list_major, *list_minor, *list_patch;
-
-	int status = 0;
-
 	GSList *code;
+
+	int s;
+	int major, minor, patch;
+	int status = 0;
 
 	if ( 0 == g_slist_length( files ) ) {
 		fprintf( stderr, "Files list is empty. Nothing to process\n" );
@@ -805,20 +807,7 @@ int make_package() {
 	}
 
 	update_config_from_view();
-
 	code = g_hash_table_lookup( config, "code" );
-	list_major = g_hash_table_lookup( config, "major" );
-	list_minor = g_hash_table_lookup( config, "minor" );
-	list_patch = g_hash_table_lookup( config, "patch" );
-
-	g_return_val_if_fail( code != NULL, 1 );
-	g_return_val_if_fail( list_major != NULL, 1 );
-	g_return_val_if_fail( list_minor != NULL, 1 );
-	g_return_val_if_fail( list_patch != NULL, 1 );
-
-	major = list_major->data;
-	minor = list_minor->data;
-	patch = list_patch->data;
 
 	if ( NULL == code ) {
 		fprintf( stderr, "Extension's code is mandatory\n" );
@@ -826,7 +815,7 @@ int make_package() {
 		goto exit_point;
 	}
 
-	if ( 0 != get_version() ) {
+	if ( 0 != get_version( &major, &minor, &patch ) ) {
 		status = 1;
 		goto exit_point;
 	}
@@ -851,7 +840,13 @@ int make_package() {
 	// Upload folder of temporary package structure
 	upload_path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
 
-	if ( g_mkdir_with_parents( upload_path, 0775 ) < 0 ) {
+
+	printf( "Old umask: %o\n", umask( 0 ) );
+	// Chmod( upload_path, 0777 );
+
+	if ( DEBUG|| debug )printf( "Upload path: '%s'\n", upload_path );
+Mkdir( upload_path, 0777 );
+	if ( g_mkdir_with_parents( upload_path, 0777 ) < 0 ) {
 		fprintf(
 			stderr,
 			"make_package: Failed to create folder '%s' in %s:%i: %s\n",
@@ -862,34 +857,34 @@ int make_package() {
 		);
 
 		status = 1;
-		goto exit_point;
+		goto exit_point; 
 	}
-
+printf( "1\n" );
 	start_clock();
-	fill_temp_package();
+	if( !fill_temp_package() ) exit( 1 );
 	end_clock( "Fill in temp structure" );
-
+printf( "2\n" );
 	start_clock();
-	make_vqmod();
+	if( !make_vqmod() ) exit( 1 );
 	end_clock( "VQMOD" );
-
+printf( "3\n" );
 	start_clock();
-	run_filters();
+	if( !run_filters() ) exit( 1 );
 	end_clock( "Filters" );
-
+printf( "4\n" );
 	start_clock();
-	php_lint();
+	if( !php_lint() ) exit( 1 );
 	end_clock( "php lint" );
-
+printf( "5\n" );
 	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC23", major, minor, patch );
 	run_zip( pckg_name );
-
-	make_oc20();
+printf( "6\n" );
+	if( !make_oc20() ) exit( 1 );
 	g_free( pckg_name );
 	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC2o", major, minor, patch );
-	run_zip( pckg_name );
+	if ( !run_zip( pckg_name ) ) exit( 1 );
 
-	fprintf( stderr, "Package was saved under version: %s.%s.%s\n", major, minor, patch );
+	fprintf( stderr, "Package was saved under version: %i.%i.%i\n", major, minor, patch );
 
 exit_point:
 	if ( NULL != pckg_dir) g_free( pckg_dir );
@@ -903,6 +898,10 @@ exit_point:
  * Returns path to folder where zipped packages stored with respect to package name
  */
 char *get_package_dir() {
+	int debug = 0;
+
+	if ( DEBUG || debug )printf( "Getting package temporary directory...\n" );
+
 	char *code = get_code();
 	char *pckg_dir = NULL;
 
@@ -911,8 +910,11 @@ char *get_package_dir() {
 		return NULL;
 	}
 
-	pckg_dir = g_build_filename( cwd, crawler_storage_dir, code, NULL );
+	pckg_dir = g_build_filename( crawler_storage_dir, code, NULL );
+
 	g_free( code );
+
+	if ( DEBUG || debug )printf( "Package directory: '%s'\n", pckg_dir );
 
 	return pckg_dir;
 }
@@ -935,8 +937,10 @@ char *get_code() {
  * Get next version numbers for the package. Gets values form the config and checks them against
  * saved packages
  */
-int get_version() {
+int get_version( int *in_major, int *in_minor, int *in_patch ) {
 	int debug = 0;
+
+	if ( DEBUG || debug )printf( "Get version\n" );
 
 	int f_major = 0;
 	int f_minor = 0;
@@ -951,6 +955,7 @@ int get_version() {
 	char regex_pattern[ MAX_LINE ];
 	char *pckg_dir;
 	char *temp;
+	char *code;
 
 	GRegex *regex;
 	GMatchInfo *match_info;
@@ -963,9 +968,15 @@ int get_version() {
 	struct dirent *entry;
 
 	pckg_dir = get_package_dir();
+	code = get_code();
+
+	if ( DEBUG ||debug )printf( "Package directory '%s'\n", pckg_dir );
 
 	if ( NULL != ( dir = opendir( pckg_dir ) ) ) {
 		sprintf( regex_pattern, pckg_name_regex, code );
+
+		if ( DEBUG || debug )printf( "Reex: '%s'\n", regex_pattern );
+
 		regex = g_regex_new( regex_pattern, 0, 0, NULL );
 
 		while ( NULL != ( entry = readdir( dir ) ) ) {
@@ -1027,6 +1038,8 @@ int get_version() {
 					f_patch = t_patch;
 				}
 
+				if ( DEBUG || debug ) fprintf( stderr, "Intermediate version: %d.%d.%d\n", f_major, f_minor, f_patch );
+
 				g_match_info_free( match_info );
 			}
 		}
@@ -1042,16 +1055,20 @@ int get_version() {
 
 		g_free( pckg_dir );
 		g_regex_unref( regex );
+		g_free( code );
 
 	} else {
-		fprintf( stderr, "Package directory '%s' doesn't exist\n", pckg_dir );
+		fprintf( stderr, "Package directory '%s' doesn't exist in %s:%i\n", pckg_dir, __FILE__, __LINE__ );
 		exit( 1 );
 	}
 
 	if ( DEBUG || debug ) fprintf( stderr, "Version: %d.%d.%d\n", f_major, f_minor, f_patch );
 
 	// Patch number may be equal in case of first release, version will be 0.0.0
-	if ( atoi( major->data ) <= f_major && atoi( minor->data ) <= f_minor && atoi( patch->data ) < f_patch ) {
+	if (
+		atoi( major->data ) < f_major ||
+		( ( atoi( major->data ) == f_major ) && atoi( minor->data ) < f_minor ) ||
+		( ( atoi( major->data ) == f_major ) && ( atoi( minor->data ) == f_minor ) && atoi( patch->data ) < f_patch ) ) {
 		fprintf(
 			stderr,
 			"Can not create package with version (%s.%s.%s) which is less then existing one(%d.%d.%d)\n",
@@ -1065,6 +1082,10 @@ int get_version() {
 
 		return 1;
 	}
+
+	*in_major = f_major;
+	*in_minor = f_minor;
+	*in_patch = f_patch;
 
 	return 0;
 }
@@ -1133,42 +1154,44 @@ int run_zip( char *package_name ) {
  * Implied CWD
  */
 int fill_temp_package() {
-	int debug = 0;
+	int debug = 1;
+
+	if ( DEBUG || debug )printf("Filling in temporary folder\n" );
 
 	int r_count;
 	int status = 0;
 	int dest = -1;
 	int src = -1;
+	int is_copy = 0;
+	int cwd_len = strlen( cwd );
 
 	char *path;
 	char *folder;
-	char buffer[ BUFF_SIZE ];
 	char *copy;
-	char readme_file_name[ MAX_LINE ];
-	int is_copy = 0;
 	char *file_name;
+	char *code;
+	char *readme_file_name;
+	char* relative_file_name;
+	char buffer[ BUFF_SIZE ];
 
 	GSList *current = files;
 
 	struct stat *sb = NULL;
 
-	// memset( copy, '\0', path_max_size );
-	// memset( readme_file_name, '\0', MAX_LINE );
+	code = get_code();
 
-	strcpy( readme_file_name, code );
-	strcat( readme_file_name, "_readme" );
+	readme_file_name = Strcat( code, "_readme", NULL );
 
-	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files..." );
+	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files...\n" );
 
 	// Clean temporary folder
-	folder = g_build_filename( cwd, pckg_tmp_dir, NULL );
+	folder = g_build_filename( cwd, pckg_tmp_dir, NULL ); // Will be freed in iterator
 	iterate( folder, del_file_cb, del_dir_cb, on_iterate_error );
-	g_free( folder );
 
 	while( NULL != current ) {
-		file_name = (char*)current->data;
+		file_name = &((char*)current->data)[ cwd_len ];
 
-		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", (char*)current->data );
+		if ( DEBUG || debug )fprintf( stderr, "Processing file '%s'\n", file_name );
 
 		// Get file mode to be able to preserve it
 		// TODO: directories in filename will inherit permissions as well
@@ -1247,7 +1270,8 @@ int fill_temp_package() {
 			copy = NULL;
 
 			if ( lseek( src, 0, SEEK_SET ) == -1 ) {
-				print_error( "fill_temp_package: Failed to rewind source file" );
+				fprintf( stderr, "fill_temp_package: Failed to rewind source file\n" );
+				goto exit_point;
 			}
 
 			goto copy;
@@ -1265,6 +1289,7 @@ exit_point:
 	if ( NULL != path )g_free( path );
 	if ( dest > -1 )close( dest );
 	if ( src > -1 )close( src );
+	g_free( code );
 
 	return 0;
 }

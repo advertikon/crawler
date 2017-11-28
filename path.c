@@ -481,3 +481,99 @@ Sigfunc *signal( int signo, Sigfunc *func ) {
 
 	return( oact.sa_handler );
 }
+
+/**
+ * Chmod wrapper. Mod is octal representation for permissions
+ */
+int Chmod( char *path, int mod ) {
+	// mode_t mode = 0;
+	int result = 0;
+
+	// if ( mod & 256 ) mode |= S_IRUSR;
+	// if ( mod & 128 ) mode |= S_IWUSR;
+	// if ( mod & 64 )  mode |= S_IXUSR;
+	// if ( mod & 32 )  mode |= S_IRGRP;
+	// if ( mod & 16 )  mode |= S_IWGRP;
+	// if ( mod & 8 )   mode |= S_IXGRP;
+	// if ( mod & 4 )   mode |= S_IROTH;
+	// if ( mod & 2 )   mode |= S_IWOTH;
+	// if ( mod & 1 )   mode |= S_IXOTH;
+
+	result = chmod( path, mod );
+
+	if ( -1 == result) fprintf( stderr, "Failed to change mode to %o on file '%s: %s'\n", mod, path, strerror( errno ) );
+
+	return result;
+}
+
+/**
+ * MKDIR wrapper to create directory with parents
+ */
+int Mkdir( char* path, int mod ) {
+	char name[ 4096 ];
+	char *p = path;
+	int i = 0;
+	char tmp_name[ 4096 ];
+	char old_cwd[ 4096 ] ;
+
+	if ( IS_EMPTY( path ) ) {
+		fprintf( stderr, "Failed to create directory: path name is empty\n" );
+		errno = EINVAL;
+		return -1;
+	}
+
+	getcwd( old_cwd, 4096 );
+
+	if ( !G_IS_DIR_SEPARATOR( *path ) ) {
+
+	}
+
+	while( '\0' != *p && '\n' != *p ) {
+		if ( i > 0 && G_IS_DIR_SEPARATOR ( *p ) ) {
+			name[ i ] = '\0'; // NUll-teminate string
+
+			if ( -1 == mkdir( name, mod ) && errno != EEXIST ) {  
+				fprintf( stderr, "Failed to create folder '%s': %s\n", name, strerror( errno ) );
+				return -1;
+			}
+		}
+
+		name[ i++ ] = *p++;
+
+		if ( i > 4096 ) {
+			fprintf( stderr, "Failed to create folder '%s': run out of buffer but failed fide NULL sentinel\n", path );
+			return -1;
+		}
+	}
+
+	// Last part if amy
+	if ( !G_IS_DIR_SEPARATOR( name[ i - 1 ] ) ) {
+		name[ i ] = '\0'; // NUll-teminate string
+
+		if ( -1 == mkdir( name, mod ) && errno != EEXIST ) {
+			fprintf( stderr, "Failed to create folder '%s': %s\n", name, strerror( errno ) );
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * Converts
+ */
+// int get_file_mode( mod ) {
+// 	mode_t mode = 0;
+
+// 	if ( mod & 256 ) mode |= S_IRUSR;
+// 	if ( mod & 128 ) mode |= S_IWUSR;
+// 	if ( mod & 64 )  mode |= S_IXUSR;
+// 	if ( mod & 32 )  mode |= S_IRGRP;
+// 	if ( mod & 16 )  mode |= S_IWGRP;
+// 	if ( mod & 8 )   mode |= S_IXGRP;
+// 	if ( mod & 4 )   mode |= S_IROTH;
+// 	if ( mod & 2 )   mode |= S_IWOTH;
+// 	if ( mod & 1 )   mode |= S_IXOTH;
+
+// 	return mode;
+// }

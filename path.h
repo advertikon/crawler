@@ -15,6 +15,7 @@
 #include <wchar.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <gtk/gtk.h>
 
 #ifdef PATH_MAX
 	static long pathmax = PATH_MAX;
@@ -40,6 +41,8 @@ static long xsi_version = 0;
 /* If PATH_MAX is indeterminate, no guarantee this is adequate */
 #define PATH_MAX_GUESS 4096
 
+#define IS_EMPTY( p ) ( NULL == p || '\0' == *p )
+
 size_t get_path_max_size( void );
 glob_t* Glob( const char *restrict );
 GSList* Scandir( char *dirname );
@@ -57,5 +60,7 @@ void clean_stat_cache( char* );
 size_t filesize( char* );
 char *Strcat( char*, ... ) G_GNUC_NULL_TERMINATED;
 int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
+int Chmod( char*, int );
+int Mkdir( char*, int );
 
 #endif
