@@ -137,15 +137,15 @@ void dump_string( char *string ) {
 	printf( "%s\n", p );
 
 	while( *p != '\0' ) {
-		sprintf( temp, "%5c", *p );
+		sprintf( temp, "%3c", *p );
 		strncat( s_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 
-		sprintf( temp, "%5x", *p );
+		sprintf( temp, "%3x", *p );
 		strncat( h_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 
-		sprintf( temp, "%5u", *p ); 
+		sprintf( temp, "%4u", *p ); 
 		strncat( i_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 
@@ -154,12 +154,12 @@ void dump_string( char *string ) {
 		// memset( temp, 0, max );
 
 		p++;
-		if ( i++ > 30 )break;
+		if ( i++ > 100 )break;
 	}
 
 	printf( "%s\n", s_str );
 	printf( "%s\n", h_str );
-	printf( "%s\n", i_str );
+	// printf( "%s\n", i_str );
 	// printf( "%s\n", p_str );
 
 	g_free( s_str );
@@ -368,7 +368,7 @@ char *Strcat( char *str, ... ) {
  * - err_c - callback on error. Argument: item path. If returns non-zero status - script terminates,
  *           otherwise function returns with status 1
  */
-int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
+int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb, void **data ) {
 	int debug = 0;
 
 	DIR* dir = NULL;
@@ -386,7 +386,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 	}
 
 	if ( NULL == stat_buffer ) {
-		if ( NULL != err_cb && 0 != err_cb( path, NULL ) ) {
+		if ( NULL != err_cb && 0 != err_cb( path, data ) ) {
 			exit( 1 );
 		}
 
@@ -397,7 +397,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 	if ( is_file( path ) ) {
 		if ( debug )fprintf( stderr, "Is file\n" );
 
-		if ( NULL != file_cb && 0 != file_cb( path, NULL ) ) {
+		if ( NULL != file_cb && 0 != file_cb( path, data ) ) {
 			is_error = TRUE;
 			goto exit_point;
 		}
@@ -406,7 +406,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 		if ( debug )fprintf( stderr, "Is folder\n" );
 
 		if ( NULL == ( dir = opendir( path ) ) ) {
-			fprintf(stderr, "Failed to open folder in %s:%i:%s\n", __FILE__, __LINE__, strerror( errno ) );
+			fprintf(stderr, "Failed to open folder in %s:%s\n", G_STRLOC, strerror( errno ) );
 			is_error = TRUE;
 			goto exit_point;
 		}
@@ -420,9 +420,9 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 				continue;
 			}
 
-			dir_to_iterate = g_build_filename( path, dir_entry->d_name, NULL ); /* needs to be freed in callee */
+			dir_to_iterate = g_build_filename( path, dir_entry->d_name, NULL ); /* will be freed in callee */
 
-			iterate( dir_to_iterate, file_cb, dir_cb, err_cb );
+			iterate( dir_to_iterate, file_cb, dir_cb, err_cb, data );
 		}
 
 		// Error while reading directory
@@ -433,7 +433,7 @@ int iterate(  char* path, cb file_cb, cb dir_cb, cb err_cb ) {
 		}
 
 		// Run DIR callback after all FILE callbacks
-		if ( NULL != dir_cb && 0 != dir_cb( path, NULL ) ) {
+		if ( NULL != dir_cb && 0 != dir_cb( path, data ) ) {
 			return 1;
 		}
 

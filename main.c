@@ -266,7 +266,7 @@ void get_files( void* widget, void* data ) {
 	g_slist_free_full( files, (GDestroyNotify)g_free );
 	files = NULL;
 
-	iterate( g_strdup( cwd ), check_item, NULL, on_iterate_error );
+	iterate( g_strdup( cwd ), check_item, NULL, on_iterate_error, NULL );
 
 	load_dependencies();
 	files_to_view();
@@ -353,67 +353,6 @@ int on_iterate_error( char *name, void *data ) {
 
 	return 1;
 }
-
-/**
- * Saves configuration file
- * CHDIR to CWD
- *
- */
-// int save_config() {
-	// xmlDocPtr doc;
-	// xmlNodePtr root, child;
-
-	// char b[ 10 ];
-
-	// if ( 0 == config_is_dirty ) return 0;
-
-	// if ( -1 == chdir( cwd ) ) {
-	// 	fprintf( stderr, "save_config: failed to change CWD to '%s': %s\n", cwd, strerror( errno ) );
-	// 	exit( 1 );
-	// }
-
-	// doc = xmlNewDoc( "1.0" );
-	// root = xmlNewNode( NULL, "config" );
-	// xmlDocSetRootElement( doc, root );
-
-	// xmlAddChild( root, config_to_xml( "include_file", include_file ) );
-	// xmlAddChild( root, config_to_xml( "exclude_file", exclude_file ) );
-	// xmlAddChild( root, config_to_xml( "include_dir", include_dir ) );
-	// xmlAddChild( root, config_to_xml( "exclude_dir", exclude_dir ) );
-	// xmlAddChild( root, config_to_xml( "include_regexp", include_regexp ) );
-	// xmlAddChild( root, config_to_xml( "exclude_regexp", exclude_regexp ) );
-
-	// child = xmlNewNode( NULL, "code" );
-	// xmlNodeAddContent( child, code );
-	// xmlAddChild( root, child );
-
-	// child = xmlNewNode( NULL, "major" );
-	// sprintf( b, "%d", major );
-	// xmlNodeAddContent( child, b );
-	// xmlAddChild( root, child );
-
-	// child = xmlNewNode( NULL, "minor" );
-	// sprintf( b, "%d", minor );
-	// xmlNodeAddContent( child, b );
-	// xmlAddChild( root, child );
-
-	// child = xmlNewNode( NULL, "patch" );
-	// sprintf( b, "%d", patch );
-	// xmlNodeAddContent( child, b );
-	// xmlAddChild( root, child );
-
-	// if ( xmlSaveFormatFile( config_name, doc, 1 ) != -1 ) {
-	// 	fprintf( stderr, "Configuration file was updated\n" );
-
-	// } else {
-	// 	fprintf( stderr, "Failed to update configuration file\n" );
-	// }
-
-	// xmlFreeNode( child );
-	// xmlFreeDoc( doc );
-
-// 	return 0;
-// }
 
 /**
  * Adds list items to XML structure
@@ -732,7 +671,7 @@ int load_dependencies() {
 								source_name = sn;
 							}
 
-							iterate( source_name, check_source, NULL, on_iterate_error ); // Add to files list
+							iterate( source_name, check_source, NULL, on_iterate_error, NULL ); // Add to files list
 
 						} else {
 							fprintf( stderr, "Failed to fetch source name from string '%s'\n", line );
@@ -789,7 +728,7 @@ int make_package() {
 	if ( DEBUG || debug )print_color( B_CYAN, ">>>>>>> MAKE PACKAGE <<<<<<<" );
 
 	char *upload_path = NULL;
-	char *pckg_name;
+	char *pckg_name = NULL;
 	char *pckg_dir = NULL;
 	char version[ VERSION_SIZE ];
 
@@ -1048,10 +987,10 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 		( ( atoi( major->data ) == f_major ) && ( atoi( minor->data ) == f_minor ) && atoi( patch->data ) < f_patch ) ) {
 		fprintf(
 			stderr,
-			"Can not create package with version (%s.%s.%s) which is less then existing one(%d.%d.%d)\n",
-			(char*)major->data,
-			(char*)minor->data,
-			(char*)patch->data,
+			"Can not create package with version (%i.%i.%i) which is less then existing one(%i.%i.%i)\n",
+			atoi( major->data ),
+			atoi( minor->data ),
+			atoi( patch->data ),
 			f_major,
 			f_minor,
 			f_patch
@@ -1158,7 +1097,7 @@ int fill_temp_package() {
 
 	// Clean temporary folder
 	folder = g_build_filename( cwd, pckg_tmp_dir, NULL ); // Will be freed in iterator
-	iterate( folder, del_file_cb, del_dir_cb, on_iterate_error );
+	iterate( folder, del_file_cb, del_dir_cb, on_iterate_error, NULL );
 
 	while( NULL != current ) {
 		file_name = &((char*)current->data)[ cwd_len ];
@@ -1424,7 +1363,7 @@ int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_list
  */
 int php_lint() {
 	char *path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
-	iterate( path, php_lint_cb, NULL, on_iterate_error );
+	iterate( path, php_lint_cb, NULL, on_iterate_error, NULL );
 
 	return 0;
 }
@@ -1599,7 +1538,7 @@ int run_filters() {
 		return 0;
 	}
 
-	iterate( g_build_filename( cwd, pckg_tmp_dir, NULL ), run_filters_cb, NULL, on_iterate_error );
+	iterate( g_build_filename( cwd, pckg_tmp_dir, NULL ), run_filters_cb, NULL, on_iterate_error, NULL );
 
 	return 0;
 }
@@ -1741,113 +1680,125 @@ char *get_common_dir() {
 int make_oc20() {
 	int debug = 1;
 
+	void *temp_files = NULL;
+
 	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
 
-	char t_cwd[ path_max_size ];
+	// Collect all the all the files under temporary folder to a list
+	iterate( g_build_filename( cwd, pckg_tmp_dir, NULL ),(cb)add_file_to_list , NULL, on_iterate_error, &temp_files );
+
+	if ( DEBUG || debug )printf( "List contains %i records\n", g_slist_length( temp_files ) );
+
+	g_slist_foreach( temp_files, make_oc20_cb, NULL );
+
+	g_slist_free_full( temp_files, g_free );
+
+	// Remove all empty directories
+	iterate( g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL ), NULL, del_empty_dirs_cb, on_iterate_error, NULL );
+
+	return 0;
+}
+
+/**
+ * Adds files to a list
+ */
+int add_file_to_list( char *file, void **list ) { 
+	*((GSList**)list) = g_slist_append( *list, g_strdup( file ) );
+
+	return 0;
+}
+
+/**
+ * iterator callback to process single file
+ */
+void make_oc20_cb( void *name, void *data ) {
+	int debug = 1;
+
 	char *p;
 	char new_name[ path_max_size ];
 	char *dir;
 
-	GSList *current;
+	if ( DEBUG || debug )printf( "Current file to process: '%s'\n", (char*)name );
 
-	strcpy( t_cwd, pckg_tmp_dir );
-	strcat( t_cwd, upload_folder );
+	if ( NULL != ( p = strstr( name, "/controller/extension/" ) ) ) {
+		memset( new_name, '\0', path_max_size );
+		strncpy( new_name, name, p - (char*)name  + 12 ); // from the start up to leading slash
+		strcat( new_name, p + 22 );
 
-	if ( NULL == files ) {
-		fprintf( stderr, "make_oc20: FIles list is empty, nothing to process\n" );
-		return 1;
+		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
+
+		dir = g_path_get_dirname( new_name );
+printf("1\n");
+		Mkdir( dir, 0777 );
+printf("2\n");
+		g_free( dir );
+printf("3\n");
+		if ( -1 == rename( name, new_name ) ) {
+			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
+			exit( 1 );
+		}
+		content_to_oc20( new_name );
 	}
 
-	current = files;
+	if ( NULL != ( p = strstr( name, "/en-gb/" ) ) ) {
+		memset( new_name, '\0', path_max_size );
+		strncpy( new_name, name, p - (char*)name ); // from the start up to leading slash
+		strcat( new_name, "/english" );
 
-	while ( NULL != current ) {
+		if ( NULL != strstr( name, "/en-gb/extension/" ) ) {
+			strcat( new_name, p + 16 );
 
-		if ( NULL != ( p = strstr( current->data, "/controller/extension/" ) ) ) {
-			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, current->data, p - (char*)current->data  + 12 ); // from the start up to leading slash
-			strcat( new_name, p + 22 );
-
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
-
-			dir = g_path_get_dirname( new_name );
-			g_mkdir_with_parents( dir, 0777 );
-			g_free( dir );
-
-			if ( -1 == rename( current->data, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
-				exit( 1 );
-			}
-
-			content_to_oc20( new_name );
+		} else {
+			strcat( new_name, p + 6 );
 		}
 
-		if ( NULL != ( p = strstr( current->data, "/en-gb/" ) ) ) {
-			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, current->data, p - (char*)current->data ); // from the start up to leading slash
-			strcat( new_name, "/english" );
+		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
 
-			if ( NULL != strstr( current->data, "/en-gb/extension/" ) ) {
-				strcat( new_name, p + 16 );
-
-			} else {
-				strcat( new_name, p + 6 );
-			}
-
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
-
-			dir = g_path_get_dirname( new_name );
-			g_mkdir_with_parents( dir, 0777 );
-			g_free( dir );
-			
-			if ( -1 == rename( current->data, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
-				exit( 1 );
-			}
+		dir = g_path_get_dirname( new_name );
+		g_mkdir_with_parents( dir, 0777 );
+		g_free( dir );
+		
+		if ( -1 == rename( name, new_name ) ) {
+			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
+			exit( 1 );
 		}
-
-		if ( NULL != ( p = strstr( current->data, "/model/extension/" ) ) ) {
-			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, current->data, p - (char*)current->data  + 7 ); // from the start up to leading slash
-			strcat( new_name, p + 17 );
-
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
-
-			dir = g_path_get_dirname( new_name );
-			g_mkdir_with_parents( dir, 0777 );
-			g_free( dir );
-			
-			if ( -1 == rename( current->data, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
-				exit( 1 );
-			}
-
-			content_to_oc20( new_name );
-		}
-
-		if ( NULL != ( p = strstr( current->data, "/template/extension/" ) ) ) {
-			memset( new_name, '\0', path_max_size );
-			strncpy( new_name, current->data, p - (char*)current->data  + 10 ); // from the start up to leading slash
-			strcat( new_name, p + 20 );
-
-			if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)current->data, new_name );
-
-			dir = g_path_get_dirname( new_name );
-			g_mkdir_with_parents( dir, 0777 );
-			g_free( dir );
-			
-			if ( -1 == rename( current->data, new_name ) ) {
-				fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)current->data, new_name, strerror( errno ) );
-				exit( 1 );
-			}
-		}
-
-		current = current->next;
 	}
 
-	// Remove all empty directories
-	iterate( g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL ), NULL, del_empty_dirs_cb, on_iterate_error );
+	if ( NULL != ( p = strstr( name, "/model/extension/" ) ) ) {
+		memset( new_name, '\0', path_max_size );
+		strncpy( new_name, name, p - (char*)name  + 7 ); // from the start up to leading slash
+		strcat( new_name, p + 17 );
 
-	return 0;
+		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
+
+		dir = g_path_get_dirname( new_name );
+		g_mkdir_with_parents( dir, 0777 );
+		g_free( dir );
+		
+		if ( -1 == rename( name, new_name ) ) {
+			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
+			exit( 1 );
+		}
+
+		content_to_oc20( new_name );
+	}
+
+	if ( NULL != ( p = strstr( name, "/template/extension/" ) ) ) {
+		memset( new_name, '\0', path_max_size );
+		strncpy( new_name, name, p - (char*)name  + 10 ); // from the start up to leading slash
+		strcat( new_name, p + 20 );
+
+		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
+
+		dir = g_path_get_dirname( new_name );
+		g_mkdir_with_parents( dir, 0777 );
+		g_free( dir );
+		
+		if ( -1 == rename( name, new_name ) ) {
+			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
+			exit( 1 );
+		}
+	}
 }
 
 /**
@@ -1866,7 +1817,7 @@ int del_empty_dirs_cb( char *path, void *data ) {
  * Changes classes names for controller and model to be OC20 compliant
  */
 int content_to_oc20( char *name ) {
-	int debug = 0;
+	int debug = 1;
 
 	FILE *f;
 	char buff[ MAX_LINE ];
@@ -1886,29 +1837,35 @@ int content_to_oc20( char *name ) {
 
 	if ( DEBUG || debug ) fprintf( stderr,  "File '%s' opened for modifications\n", name );
 
+	memset( new_line, 0, MAX_LINE );
+
 	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
 		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
 		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
 
-		if ( g_regex_match( regex, buff, 0, 0 ) ) {
+		if ( g_regex_match( regex, buff, 0, &match_info ) ) {
 			if ( DEBUG || debug ) {
-				fprintf( stderr, "Matched string \n'%s'\n", buff );
-				matched_string = g_match_info_fetch( match_info, 1 );
-				fprintf( stderr, "Match: '%s'\n", matched_string );
-				g_free( matched_string );
+				fprintf( stderr, "Matched string \n" );
+				dump_string( buff );
 			}
 
 			g_match_info_fetch_pos( match_info, 1, &match_start, &match_end );
-
 			len = strlen( buff );
 
-			new_line[ len ] = '\0';
 			strncpy( new_line, buff, match_start ); // Copy everything up to "extension"
 			strcat( new_line, &buff[ match_end ] ); // After "extension"
-			strcat( new_line, "         \n" ); // Add spaces in place of removed characters up to original newline character
+
+			for( int i = strlen( new_line ); i < len - 1; i++ ) {
+				new_line[ i ] = ' ';
+			}
+
+			new_line[ len - 1 ] = '\n';
  
-			if ( DEBUG || debug ) fprintf( stderr, "Result to be saved: \n'%s'\n", new_line );
-			if ( DEBUG || debug ) fprintf( stderr, "String length: %ld\n", len );
+			if ( DEBUG || debug ) {
+				fprintf( stderr, "Result to be saved:\n" );
+				dump_string( new_line );
+				printf( "Match start: %i, match end: %i, buffer length: %li\n", match_start, match_end, len );
+			}
 
 			// Get 1 line back in file stream
 			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
@@ -1933,6 +1890,7 @@ int content_to_oc20( char *name ) {
 
 	fclose( f );
 	g_regex_unref( regex );
+	g_match_info_unref( match_info );
 
 	return 0;
 }

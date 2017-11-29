@@ -59,7 +59,7 @@ gboolean is_file( char*);
 void clean_stat_cache( char* );
 size_t filesize( char* );
 char *Strcat( char*, ... ) G_GNUC_NULL_TERMINATED;
-int iterate(  char* path, cb file_c, cb dir_c, cb err_c );
+int iterate(  char* path, cb file_c, cb dir_c, cb err_c, void** );
 int Chmod( char*, int );
 int Mkdir( char*, int );
 

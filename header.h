@@ -94,6 +94,8 @@ void init_config_hash( void );
 void print_error( char* );
 void files_to_view( void );
 xmlDocPtr parseXMLDoc( char* );
+void make_oc20_cb( void*, void* );
+int add_file_to_list( char*, void** );
 
 
 #define MAX_LINE 400
