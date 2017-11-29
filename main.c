@@ -1,7 +1,7 @@
 #include "header.h"
 
 char* code;
-char *pckg_tmp_dir = ".tpm_pckg/";
+char *pckg_tmp_dir = ".tpm_pckg";
 char *upload_folder = "upload/";
 char *crawler_storage_dir = "/var/www/html/crawler/";
 char *pckg_name_templ = "%s-%s-%i.%i.%i.ocmod.zip";
@@ -837,58 +837,35 @@ int make_package() {
 		goto exit_point;
 	}
 
-	// Upload folder of temporary package structure
-	upload_path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
-
-
-	printf( "Old umask: %o\n", umask( 0 ) );
-	// Chmod( upload_path, 0777 );
-
-	if ( DEBUG|| debug )printf( "Upload path: '%s'\n", upload_path );
-Mkdir( upload_path, 0777 );
-	if ( g_mkdir_with_parents( upload_path, 0777 ) < 0 ) {
-		fprintf(
-			stderr,
-			"make_package: Failed to create folder '%s' in %s:%i: %s\n",
-			upload_folder,
-			__FILE__,
-			__LINE__,
-			strerror( errno )
-		);
-
-		status = 1;
-		goto exit_point; 
-	}
-printf( "1\n" );
 	start_clock();
-	if( !fill_temp_package() ) exit( 1 );
+	if( fill_temp_package() ) exit( 1 );
 	end_clock( "Fill in temp structure" );
-printf( "2\n" );
+
 	start_clock();
-	if( !make_vqmod() ) exit( 1 );
-	end_clock( "VQMOD" );
-printf( "3\n" );
+	if( make_vqmod() ) exit( 1 );
+	end_clock( "VQMOD" ); 
+
 	start_clock();
-	if( !run_filters() ) exit( 1 );
+	if( run_filters() ) exit( 1 );
 	end_clock( "Filters" );
-printf( "4\n" );
+	
 	start_clock();
-	if( !php_lint() ) exit( 1 );
+	if( php_lint() ) exit( 1 );
 	end_clock( "php lint" );
-printf( "5\n" );
-	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC23", major, minor, patch );
+
+	pckg_name = g_strdup_printf( pckg_name_templ, code->data, "OC23", major, minor, patch );
 	run_zip( pckg_name );
 printf( "6\n" );
-	if( !make_oc20() ) exit( 1 );
-	g_free( pckg_name );
-	pckg_name = g_strdup_printf( pckg_name_templ, code, "OC2o", major, minor, patch );
-	if ( !run_zip( pckg_name ) ) exit( 1 );
+	if( make_oc20() ) exit( 1 );
+	g_free( pckg_name );printf( "End\n" );exit(1);
+	pckg_name = g_strdup_printf( pckg_name_templ, code->data, "OC20", major, minor, patch );
+	if ( run_zip( pckg_name ) ) exit( 1 );
 
 	fprintf( stderr, "Package was saved under version: %i.%i.%i\n", major, minor, patch );
 
 exit_point:
 	if ( NULL != pckg_dir) g_free( pckg_dir );
-	if ( NULL != upload_path ) g_free( upload_path );
+	// if ( NULL != upload_path ) g_free( upload_path );
 	if ( NULL != pckg_name ) g_free( pckg_name );
 
 	return status;
@@ -975,7 +952,7 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 	if ( NULL != ( dir = opendir( pckg_dir ) ) ) {
 		sprintf( regex_pattern, pckg_name_regex, code );
 
-		if ( DEBUG || debug )printf( "Reex: '%s'\n", regex_pattern );
+		if ( DEBUG || debug )printf( "Regx: '%s'\n", regex_pattern );
 
 		regex = g_regex_new( regex_pattern, 0, 0, NULL );
 
@@ -1096,7 +1073,6 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 int run_zip( char *package_name ) {
 	int debug = 0;
 
-	char src_path[ path_max_size ];
 	char mode[] = "-q";
 	char *path;
 
@@ -1135,11 +1111,7 @@ int run_zip( char *package_name ) {
 		mode[ 1 ] = 'v';
 	}
 
-	path = get_package_dir();
-	memset( src_path, 0, path_max_size );
-	strncpy( src_path, path, path_max_size );
-	g_free( path );
-	strcat( path, package_name );
+	path = g_build_filename( get_package_dir(), package_name, NULL );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Creating ZIP archive... '%s'\n", path );
 
@@ -1154,7 +1126,7 @@ int run_zip( char *package_name ) {
  * Implied CWD
  */
 int fill_temp_package() {
-	int debug = 1;
+	int debug = 0;
 
 	if ( DEBUG || debug )printf("Filling in temporary folder\n" );
 
@@ -1167,7 +1139,7 @@ int fill_temp_package() {
 
 	char *path;
 	char *folder;
-	char *copy;
+	char *copy = NULL;
 	char *file_name;
 	char *code;
 	char *readme_file_name;
@@ -1180,7 +1152,7 @@ int fill_temp_package() {
 
 	code = get_code();
 
-	readme_file_name = Strcat( code, "_readme", NULL );
+	readme_file_name = Strcat( code, "_readme", NULL ); // Can be anywhere in the path, lowercase only
 
 	if ( DEBUG || debug ) fprintf( stderr, "Deleting temporary files...\n" );
 
@@ -1224,23 +1196,23 @@ int fill_temp_package() {
 			copy = g_build_filename( cwd, pckg_tmp_dir, "install.xml", NULL );
 
 			// Create OCMOD which can be installed directly
-			path = g_build_filename( cwd, pckg_tmp_dir, strrchr( current->data, '/' ), NULL );
+			path = g_build_filename( cwd, pckg_tmp_dir, strrchr( file_name, '/' ), NULL );
 
 		// Place README file in the package root
-		} else if ( strcmp( current->data, readme_file_name ) == 0 ) {
+		} else if ( strstr( file_name, readme_file_name ) != NULL ) {
 			if ( DEBUG || debug ) fprintf( stderr, "Readme file found: '%s'\n", (char*)current->data );
 
 			path = g_build_filename( cwd, pckg_tmp_dir, "README.TXT", NULL );
 
 		} else {
-			path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, current->data, NULL );
+			path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, file_name, NULL ); // Get relative path
 		}
 
 	copy:
 		if ( DEBUG || debug )fprintf( stderr, "Creating file '%s'\n", path );
 
 		if ( ( dest = make_file( path, sb->st_mode ) ) < 0 ) {
-			fprintf( stderr, "fill_temp_package: Failed to save file '%s': %s\n", path, strerror( errno ) );
+			fprintf( stderr, "fill_temp_package: Failed to save file '%s' in %s: %s\n", path, G_STRLOC, strerror( errno ) );
 			status = 1;
 			goto exit_point;
 		}
@@ -1249,17 +1221,19 @@ int fill_temp_package() {
 
 		while ( ( r_count = read( src, buffer, BUFF_SIZE ) ) > 0 ) {
 			if ( -1 == write( dest, buffer, r_count ) ) {
-				fprintf( stderr, "fill_temp_package: write file error: %s", strerror( errno ) );
+				fprintf( stderr, "fill_temp_package: write file error in %s: %s", G_STRLOC, strerror( errno ) );
 				status = 1;
 				goto exit_point;
 			}
 		}
 
 		if ( -1 == r_count ) {
-			fprintf( stderr, "fill_temp_package: read file error: %s", strerror( errno ) );
+			fprintf( stderr, "fill_temp_package: read file error in %s: %s", G_STRLOC, strerror( errno ) );
 			status = 1;
 			goto exit_point;
 		}
+
+		if ( DEBUG || debug )printf( "File '%s' was filled up with contents\n", (char*)current->data );
 
 		close( dest );
 		dest = -1;
@@ -1270,7 +1244,7 @@ int fill_temp_package() {
 			copy = NULL;
 
 			if ( lseek( src, 0, SEEK_SET ) == -1 ) {
-				fprintf( stderr, "fill_temp_package: Failed to rewind source file\n" );
+				fprintf( stderr, "fill_temp_package: Failed to rewind source file in %s\n", G_STRLOC );
 				goto exit_point;
 			}
 
@@ -1291,7 +1265,7 @@ exit_point:
 	if ( src > -1 )close( src );
 	g_free( code );
 
-	return 0;
+	return status;
 }
 
 /**
@@ -1309,7 +1283,7 @@ int make_file( char *name, mode_t mode ) {
 	d_name = g_path_get_dirname( name );
 
 	if ( "." != d_name ) {
-		if( -1 == g_mkdir_with_parents( d_name, mode ) ) {
+		if( -1 == g_mkdir_with_parents( d_name, 0777 ) ) {
 			fprintf( stderr, "Failed to create folder '%s' in %s:%i: %s\n", d_name, __FILE__, __LINE__, strerror( errno ) );
 			g_free( d_name );
 
@@ -1333,13 +1307,13 @@ int make_file( char *name, mode_t mode ) {
 int fill_translation( FILE* f, char *name ) {
 	int debug = 0;
 
-	GSList *catalog_translation;
-	GSList *admin_translation;
+	GSList *catalog_translation = NULL;
+	GSList *admin_translation = NULL;
 
 	char *p;
 	name = &name[ strlen( cwd ) ]; // Make it relative to CWD
 
-	if ( DEBUG || debug ) fprintf( stderr, "File: '%s'\n", name );
+	if ( DEBUG || debug ) fprintf( stderr, "Searching translations in: '%s'\n", name );
 
 	if ( NULL != strstr( name, "/language/" ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Not language - skip\n" );
@@ -1394,23 +1368,33 @@ int fill_translation( FILE* f, char *name ) {
 int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_lists ) {
 	int debug = 0;
 
+	if ( DEBUG || debug )printf( "Parsing file for translations\n" );
+
 	char line[ MAX_LINE ];
 	char *translation;
 
-	GRegex *regex = g_regex_new( "__\\( ('|\") \\s* ( [^\1]+ ) \1 (?:[^)]*) \\)", G_REGEX_EXTENDED, 0, NULL );
+	GError *error = NULL;
+	GRegex *regex = g_regex_new( "__\\( \\s* ('|\") (.*?) \\1 \\s* \\)", G_REGEX_EXTENDED, 0, &error );
 	GMatchInfo *match_info;
 
-	rewind( f ); 
+	if ( NULL != error ) {
+		printf( "Regex error: %s in %s\n", error->message, G_STRLOC );
+		exit( 1 );
+	}
+
+	rewind( f );
 
 	while( NULL != fgets( line, MAX_LINE, f ) ) {
 		if ( debug ) fprintf( stderr, "Processing line '%s'", line );
 
 		g_regex_match( regex, line, 0, &match_info );
 
-		if ( g_match_info_matches( match_info ) ) {
+		while ( g_match_info_matches( match_info ) ) {
+			// if ( DEBUG || debug )printf( "Full match: '%s'\n", g_match_info_fetch( match_info, 0 ) );
+
 			translation = g_match_info_fetch( match_info, 2 );
 
-			if ( debug ) fprintf( stderr, "Match found: %s\n", translation );
+			if ( debug ) fprintf( stderr, "Match found: '%s'\n", translation );
 
 			list1 = g_slist_append( list1, translation );
 
@@ -1418,6 +1402,7 @@ int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_list
 				list2 = g_slist_append( list2, g_strdup( translation ) );
 			}
 
+			g_free( translation );
 			g_match_info_next (match_info, NULL);
 		}
 
@@ -1438,11 +1423,7 @@ int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_list
  * Runs php linter on files under temporary folder
  */
 int php_lint() {
-	char path[ MAX_LINE ];
-
-	strcpy( path, pckg_tmp_dir );
-	strcat( path, upload_folder );
-
+	char *path = g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL );
 	iterate( path, php_lint_cb, NULL, on_iterate_error );
 
 	return 0;
@@ -1758,7 +1739,7 @@ char *get_common_dir() {
  * Makes changes to temporary files structure to make package conforms OC20 restrictions
  */
 int make_oc20() {
-	int debug = 0;
+	int debug = 1;
 
 	if ( DEBUG || debug ) fprintf( stderr, "Making structure for OC20...\n" );
 
@@ -1771,7 +1752,6 @@ int make_oc20() {
 
 	strcpy( t_cwd, pckg_tmp_dir );
 	strcat( t_cwd, upload_folder );
-
 
 	if ( NULL == files ) {
 		fprintf( stderr, "make_oc20: FIles list is empty, nothing to process\n" );
@@ -1964,9 +1944,10 @@ int add_version( FILE *f ) {
 	int debug = 0;
 
 	char buff[ MAX_LINE ];
-	char prev[MAX_LINE ];
+	char prev[ MAX_LINE ];
 	char new_buff[ MAX_LINE ];
 	char *matched_string;
+	char *config_version;
 	struct llist *matches;
 	size_t len, matched_len, buff_len, new_len;
 	int c = 0;
@@ -1975,7 +1956,7 @@ int add_version( FILE *f ) {
 	int match_start;
 	int match_end;
 
-	GRegex *regex = g_regex_new( "@version\\s+([0-9]+\\.[0-9]+\\.[0-9]+ *)$", G_REGEX_MULTILINE, 0, NULL );
+	GRegex *regex = g_regex_new( "@version \\s+ ( [0-9]+ \\. [0-9]+ \\. [0-9]+ ) $", G_REGEX_EXTENDED, 0, NULL );
 	GMatchInfo *match_info;
 
 	GSList *list_major, *list_minor, *list_patch;
@@ -1988,6 +1969,12 @@ int add_version( FILE *f ) {
 	g_return_val_if_fail( NULL != list_major, 1 );
 	g_return_val_if_fail( NULL != list_minor, 1 );
 	g_return_val_if_fail( NULL != list_patch, 1 );
+
+	major = atoi( list_major->data );
+	minor = atoi( list_minor->data );
+	patch = atoi( list_patch->data );
+
+	config_version = g_strdup_printf( "%i.%i.%i", major, minor, patch );
 
 	rewind( f );
 
@@ -2010,9 +1997,7 @@ int add_version( FILE *f ) {
 			g_match_info_fetch_pos( match_info, 1, &match_start, &match_end );
 
 			// Length of package current version in characters.
-			len = strlen( list_major->data ) + strlen( list_minor->data ) + strlen( list_patch->data ) + 2; // Plus 2 dots
-
-			if ( DEBUG || debug ) fprintf( stderr, "Major: %li, minor - %li, patch: %li\n", strlen( list_major->data ), strlen( list_minor->data ), strlen( list_patch->data ) );
+			len = strlen( config_version );
 
 			// Matched version length
 			matched_len = match_end - match_start;
@@ -2020,7 +2005,7 @@ int add_version( FILE *f ) {
 			// Buffer length
 			buff_len = strlen( buff );
 
-			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%s.%s.%s) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", (char*)list_major->data, (char*)list_minor->data, (char*)list_patch->data, len, matched_len, buff_len, match_start, match_end );
+			if ( DEBUG || debug ) fprintf( stderr,  "Package version length (%i.%i.%i) is : %ld\nMatched version length is: %ld\nBuffer length: %ld\nMatch start: %d\nMatch end: %d\n", major, minor, patch, len, matched_len, buff_len, match_start, match_end );
 
 			memset( new_buff, '\0', MAX_LINE );
 			strncpy( new_buff, buff, match_start );
@@ -2033,7 +2018,7 @@ int add_version( FILE *f ) {
 
 			// Space is OK
 			} else if ( matched_len >= len ) {
-				sprintf( &new_buff[ match_start ], "%d.%d.%d", major, minor, patch );
+				strcat( &new_buff[ match_start ], config_version );
 
 			} else {
 				break;
@@ -2082,8 +2067,13 @@ int add_version( FILE *f ) {
 		strcpy( prev, buff );
 		memset( buff, '\0', MAX_LINE );
 	}
+	
+	g_free( config_version );
 }
 
+/**
+ * Tries to find XML node
+ */
 xmlNodePtr find_node( xmlNodePtr nod, char *name ) {
 	xmlNodePtr cur, ret;
 
@@ -2112,6 +2102,9 @@ xmlNodePtr find_node( xmlNodePtr nod, char *name ) {
 	return NULL;
 }
 
+/**
+ * Translate OCMOD entries to VQMOD
+ */
 int fix_vqmod_file( xmlDocPtr doc, xmlNodePtr cur ) {
 	xmlNodePtr add, search;
 
@@ -2123,12 +2116,12 @@ int fix_vqmod_file( xmlDocPtr doc, xmlNodePtr cur ) {
 	search = find_node( cur, "search" );
 
 	if ( NULL == add ) {
-		fprintf( stderr, "fix_vqmod_file: file node doesn't contain node 'add'\n" );
+		fprintf( stderr, "fix_vqmod_file: file node doesn't contain node 'add' in %s\n", G_STRLOC );
 		exit( 1 );
 	}
 
 	if ( NULL == search ) {
-		fprintf( stderr, "fix_vqmod_file: file node doesn't contain nod 'search'\n" );
+		fprintf( stderr, "fix_vqmod_file: file node doesn't contain nod 'search' in %s\n", G_STRLOC );
 		exit( 1 );
 	}
 
@@ -2138,31 +2131,30 @@ int fix_vqmod_file( xmlDocPtr doc, xmlNodePtr cur ) {
     return 1;
 }
 
-xmlDocPtr parseDoc() {
+/**
+ * Opens OCMOD files and returns XML VQMOD representation
+ */
+xmlDocPtr parseXMLDoc( char *path ) {
 	xmlDocPtr doc;
 	xmlNodePtr cur, prev, mod;
-	char name[path_max_size ];
 
-	strcpy( name, pckg_tmp_dir );
-	sprintf( &name[ strlen( name ) ], "%s.ocmod.xml", code );
-
-	doc = xmlParseFile( name );
+	doc = xmlParseFile( path );
 	
 	if ( doc == NULL ) {
-		fprintf( stderr,"parseDoc: Document not parsed successfully.\n");
+		fprintf( stderr,"XML Document not parsed successfully in %s\n", G_STRLOC );
 		return (NULL);
 	}
 	
 	mod = xmlDocGetRootElement( doc );
 	
 	if (mod == NULL) {
-		fprintf(stderr,"parseDoc: empty document\n");
+		fprintf(stderr,"parseDoc: empty document in %s\n", G_STRLOC );
 		xmlFreeDoc(doc);
 		return (NULL);
 	}
 	
 	if (xmlStrcmp(mod->name, (const xmlChar *) "modification")) {
-		fprintf(stderr,"parseDoc: document of the wrong type, root node != modification");
+		fprintf(stderr,"parseDoc: document of the wrong type, root node != modification in %s\n", G_STRLOC );
 		xmlFreeDoc(doc);
 		return (NULL);
 	}
@@ -2192,20 +2184,36 @@ xmlDocPtr parseDoc() {
 	return(doc);
 }
 
+/**
+ * Makes VQMOD file from existing OCMOD file
+ */
 int make_vqmod() {
-	char name[ path_max_size ];
+	char *name_ocmod;
+	char *name_vqmod;
+	char *code;
+	char *path_ocmod;
+	char *path_vqmod;
 	char *keyword;
 	xmlDocPtr doc;
 
-	strcpy( name, pckg_tmp_dir );
-	sprintf( &name[ strlen( name ) ], "%s.vqmod.xml", code );
+	code = get_code();
+	name_ocmod = g_strdup_printf( "%s.ocmod.xml", code );
+	path_ocmod = g_build_filename( cwd, pckg_tmp_dir, name_ocmod, NULL );
+	name_vqmod = g_strdup_printf( "%s.vqmod.xml", code );
+	path_vqmod = g_build_filename( cwd, pckg_tmp_dir, name_vqmod, NULL );
 
-	doc = parseDoc ();
+	doc = parseXMLDoc( path_ocmod );
 
 	if (doc != NULL) {
-		xmlSaveFormatFile ( name, doc, 0 );
+		xmlSaveFormatFile( path_vqmod, doc, 0 );
 		xmlFreeDoc( doc );
 	}
+
+	g_free( code );
+	g_free( name_vqmod );
+	g_free( path_vqmod );
+	g_free( name_ocmod );
+	g_free( path_ocmod );
 	
 	return 0;
 }

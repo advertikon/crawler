@@ -137,15 +137,15 @@ void dump_string( char *string ) {
 	printf( "%s\n", p );
 
 	while( *p != '\0' ) {
-		sprintf( temp, "%11c", *p );
+		sprintf( temp, "%5c", *p );
 		strncat( s_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 
-		sprintf( temp, "%11x", *p );
+		sprintf( temp, "%5x", *p );
 		strncat( h_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 
-		sprintf( temp, "%11u", *p ); 
+		sprintf( temp, "%5u", *p ); 
 		strncat( i_str, temp, strlen( temp ) );
 		memset( temp, 0, max );
 

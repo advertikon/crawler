@@ -93,6 +93,7 @@ void delete_config_hide( GtkButton*, gpointer );
 void init_config_hash( void );
 void print_error( char* );
 void files_to_view( void );
+xmlDocPtr parseXMLDoc( char* );
 
 
 #define MAX_LINE 400
