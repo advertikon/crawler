@@ -84,6 +84,9 @@ GtkButton *button_make_package;
 // Select package event handler ID
 gulong select_package_handler = 0;
 
+// Iterate over FS button handler
+gulong button_iterate_handler = 0;
+
 int main( int argc, char **argv ) {
 	if ( DEBUG )print_color( B_RED, "Stat\n" );
 
@@ -174,7 +177,7 @@ int main( int argc, char **argv ) {
     button_iterate = GTK_BUTTON( gtk_builder_get_object( UI_builder, "button_iterate" ) );
 
     // Click button event handler
-    g_signal_connect ( button_iterate, "clicked", G_CALLBACK( get_files ), NULL);
+    button_iterate_handler = g_signal_connect ( button_iterate, "clicked", G_CALLBACK( get_files ), NULL);
 
     /********* Files list **********/
     buffer_file_list = GTK_TEXT_BUFFER( gtk_builder_get_object( UI_builder, "buffer_file_list" ) );
@@ -255,7 +258,9 @@ void show_error( char *message ) {
  * Fills in files list. Iterate button click event handler
  */
 void get_files( void* widget, void* data ) {
-	if ( DEBUG ) print_color( B_CYAN, ">>>>>> GET PACKAGE FILES <<<<<<<<" );
+	int debug = 0;
+
+	if ( DEBUG || debug ) print_color( B_CYAN, ">>>>>> GET PACKAGE FILES <<<<<<<<" );
 
 	include_file_temp = g_hash_table_lookup( config, "include_file" );
 	exclude_file_temp = g_hash_table_lookup( config, "exclude_file" );
@@ -723,7 +728,7 @@ int load_dependencies() {
  * Makes package
  */
 int make_package() {
-	int debug = 1;
+	int debug = 0;
 
 	if ( DEBUG || debug )print_color( B_CYAN, ">>>>>>> MAKE PACKAGE <<<<<<<" );
 
@@ -794,17 +799,23 @@ int make_package() {
 
 	pckg_name = g_strdup_printf( pckg_name_templ, code->data, "OC23", major, minor, patch );
 	run_zip( pckg_name );
-printf( "6\n" );
+	g_free( pckg_name );
+
+	start_clock();
 	if( make_oc20() ) exit( 1 );
-	g_free( pckg_name );printf( "End\n" );exit(1);
+	end_clock( "Make OC20" );
+
 	pckg_name = g_strdup_printf( pckg_name_templ, code->data, "OC20", major, minor, patch );
+	start_clock();
 	if ( run_zip( pckg_name ) ) exit( 1 );
 
 	fprintf( stderr, "Package was saved under version: %i.%i.%i\n", major, minor, patch );
+	fprintf( stderr, "Saving configuration\n" );
+
+	save_config( NULL, NULL );
 
 exit_point:
 	if ( NULL != pckg_dir) g_free( pckg_dir );
-	// if ( NULL != upload_path ) g_free( upload_path );
 	if ( NULL != pckg_name ) g_free( pckg_name );
 
 	return status;
@@ -879,6 +890,10 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 	GSList *major = g_hash_table_lookup( config, "major" );
 	GSList *minor = g_hash_table_lookup( config, "minor" );
 	GSList *patch = g_hash_table_lookup( config, "patch" );
+
+	int configuration_major = atoi( major->data );
+	int configuration_minor = atoi( minor->data );
+	int configuration_patch = atoi( patch->data );
 
 	DIR *dir;
 	struct dirent *entry;
@@ -960,13 +975,16 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 			}
 		}
 
+		if ( DEBUG || debug )printf( "Configuration version: %i.%i.%i, disc version: %i.%i.%i\n", configuration_major, configuration_minor, configuration_patch, f_major, f_minor, f_patch );
+
 		// Current configuration version equals the latest package version - increment patch number
-		if ( atoi( major->data ) == f_major && atoi( minor->data ) == f_minor && atoi( patch->data ) == f_patch && !is_empty_dir) {
+		if ( configuration_major == f_major && configuration_minor == f_minor && configuration_patch == f_patch && !is_empty_dir) {
 			if ( DEBUG || debug ) fprintf( stderr, "Patch number was automatically incremented\n" );
 
 			g_free( patch->data );
 			patch->data = g_strdup_printf( "%i", ++f_patch );
 			update_config_view();
+			configuration_patch++;
 		}
 
 		g_free( pckg_dir );
@@ -978,19 +996,19 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 		exit( 1 );
 	}
 
-	if ( DEBUG || debug ) fprintf( stderr, "Version: %d.%d.%d\n", f_major, f_minor, f_patch );
+	if ( DEBUG || debug ) fprintf( stderr, "Version: %i.%i.%i\n", f_major, f_minor, f_patch );
 
 	// Patch number may be equal in case of first release, version will be 0.0.0
 	if (
-		atoi( major->data ) < f_major ||
-		( ( atoi( major->data ) == f_major ) && atoi( minor->data ) < f_minor ) ||
-		( ( atoi( major->data ) == f_major ) && ( atoi( minor->data ) == f_minor ) && atoi( patch->data ) < f_patch ) ) {
+		configuration_major < f_major ||
+		( ( configuration_major == f_major ) && configuration_minor < f_minor ) ||
+		( ( configuration_major == f_major ) && ( configuration_minor == f_minor ) && configuration_patch < f_patch ) ) {
 		fprintf(
 			stderr,
 			"Can not create package with version (%i.%i.%i) which is less then existing one(%i.%i.%i)\n",
-			atoi( major->data ),
-			atoi( minor->data ),
-			atoi( patch->data ),
+			configuration_major,
+			configuration_minor,
+			configuration_patch,
 			f_major,
 			f_minor,
 			f_patch
@@ -999,9 +1017,9 @@ int get_version( int *in_major, int *in_minor, int *in_patch ) {
 		return 1;
 	}
 
-	*in_major = f_major;
-	*in_minor = f_minor;
-	*in_patch = f_patch;
+	*in_major = configuration_major;
+	*in_minor = configuration_minor;
+	*in_patch = configuration_patch;
 
 	return 0;
 }
@@ -1372,7 +1390,9 @@ int php_lint() {
  * Callback for php linter iterator
  */
 int php_lint_cb( char *name, void *data ) {
-	char cmd[ MAX_LINE + 7 ];
+	int debug = 0;
+
+	char *cmd;
 	int code;
 	char *ext;
 
@@ -1389,11 +1409,12 @@ int php_lint_cb( char *name, void *data ) {
 		)
 	) return 0;
 
-	memset( cmd, '\0', MAX_LINE + 7 );
-	strcpy( cmd, "php -l " );
-	strcat( cmd, name );
+	cmd = Strcat( "php -l ", name, " > /dev/null", NULL );
+
+	if ( DEBUG || debug ) printf( "Run command '%s'\n", cmd );
 
 	code = system( cmd );
+	g_free( cmd );
 
 	if ( -1 == code ) {
 		fprintf( stderr, "php_lint: error: %s\n", strerror( errno ) );
@@ -1678,7 +1699,7 @@ char *get_common_dir() {
  * Makes changes to temporary files structure to make package conforms OC20 restrictions
  */
 int make_oc20() {
-	int debug = 1;
+	int debug = 0;
 
 	void *temp_files = NULL;
 
@@ -1690,11 +1711,7 @@ int make_oc20() {
 	if ( DEBUG || debug )printf( "List contains %i records\n", g_slist_length( temp_files ) );
 
 	g_slist_foreach( temp_files, make_oc20_cb, NULL );
-
 	g_slist_free_full( temp_files, g_free );
-
-	// Remove all empty directories
-	iterate( g_build_filename( cwd, pckg_tmp_dir, upload_folder, NULL ), NULL, del_empty_dirs_cb, on_iterate_error, NULL );
 
 	return 0;
 }
@@ -1717,6 +1734,8 @@ void make_oc20_cb( void *name, void *data ) {
 	char *p;
 	char new_name[ path_max_size ];
 	char *dir;
+	char *dir_to_remove;
+	int delete = 0;
 
 	if ( DEBUG || debug )printf( "Current file to process: '%s'\n", (char*)name );
 
@@ -1728,19 +1747,19 @@ void make_oc20_cb( void *name, void *data ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
 
 		dir = g_path_get_dirname( new_name );
-printf("1\n");
 		Mkdir( dir, 0777 );
-printf("2\n");
 		g_free( dir );
-printf("3\n");
+
 		if ( -1 == rename( name, new_name ) ) {
 			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
 			exit( 1 );
 		}
-		content_to_oc20( new_name );
-	}
 
-	if ( NULL != ( p = strstr( name, "/en-gb/" ) ) ) {
+		content_to_oc20( new_name );
+		php_lint_cb( new_name, NULL );
+		delete = 1;
+
+	} else if ( NULL != ( p = strstr( name, "/en-gb/" ) ) ) {
 		memset( new_name, '\0', path_max_size );
 		strncpy( new_name, name, p - (char*)name ); // from the start up to leading slash
 		strcat( new_name, "/english" );
@@ -1755,16 +1774,17 @@ printf("3\n");
 		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
 
 		dir = g_path_get_dirname( new_name );
-		g_mkdir_with_parents( dir, 0777 );
+		Mkdir( dir, 0777 );
 		g_free( dir );
 		
 		if ( -1 == rename( name, new_name ) ) {
 			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
 			exit( 1 );
 		}
-	}
 
-	if ( NULL != ( p = strstr( name, "/model/extension/" ) ) ) {
+		delete = 1;
+
+	} else if ( NULL != ( p = strstr( name, "/model/extension/" ) ) ) {
 		memset( new_name, '\0', path_max_size );
 		strncpy( new_name, name, p - (char*)name  + 7 ); // from the start up to leading slash
 		strcat( new_name, p + 17 );
@@ -1772,7 +1792,7 @@ printf("3\n");
 		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
 
 		dir = g_path_get_dirname( new_name );
-		g_mkdir_with_parents( dir, 0777 );
+		Mkdir( dir, 0777 );
 		g_free( dir );
 		
 		if ( -1 == rename( name, new_name ) ) {
@@ -1781,9 +1801,10 @@ printf("3\n");
 		}
 
 		content_to_oc20( new_name );
-	}
+		php_lint_cb( new_name, NULL );
+		delete = 1;
 
-	if ( NULL != ( p = strstr( name, "/template/extension/" ) ) ) {
+	} else if ( NULL != ( p = strstr( name, "/template/extension/" ) ) ) {
 		memset( new_name, '\0', path_max_size );
 		strncpy( new_name, name, p - (char*)name  + 10 ); // from the start up to leading slash
 		strcat( new_name, p + 20 );
@@ -1791,13 +1812,28 @@ printf("3\n");
 		if ( DEBUG || debug ) fprintf( stderr, "Changing '%s' => '%s'\n", (char*)name, new_name );
 
 		dir = g_path_get_dirname( new_name );
-		g_mkdir_with_parents( dir, 0777 );
+		Mkdir( dir, 0777 );
 		g_free( dir );
-		
+
 		if ( -1 == rename( name, new_name ) ) {
 			fprintf( stderr, "make_oc20: failed to rename '%s' to '%s': %s\n", (char*)name, new_name, strerror( errno ) );
 			exit( 1 );
 		}
+
+		delete = 1;
+	}
+
+	if ( delete ) {
+		dir_to_remove = g_path_get_dirname( name );
+
+		if ( DEBUG || debug )printf( "Removing directory '%s'\n", dir_to_remove );
+
+		if ( -1 == Rmdir_upward( dir_to_remove, 4 ) ) {
+			fprintf( stderr, "Failed to remove directory '%s': %s in %s\n", dir_to_remove, strerror( errno ), G_STRLOC );
+			exit( 1 );
+		}
+
+		g_free( dir_to_remove );
 	}
 }
 
@@ -1817,9 +1853,9 @@ int del_empty_dirs_cb( char *path, void *data ) {
  * Changes classes names for controller and model to be OC20 compliant
  */
 int content_to_oc20( char *name ) {
-	int debug = 1;
+	int debug = 0;
 
-	FILE *f;
+	int f;
 	char buff[ MAX_LINE ];
 	char new_line[ MAX_LINE ];
 	size_t len;
@@ -1830,7 +1866,7 @@ int content_to_oc20( char *name ) {
 	GRegex *regex = g_regex_new( "class\\s+\\w+?(extension)", G_REGEX_CASELESS, 0, NULL );
 	GMatchInfo *match_info;
 
-	if ( NULL == ( f = fopen( name, "r+" ) ) ) {
+	if ( -1 == ( f = open( name, O_RDWR ) ) ) {
 		fprintf( stderr, "content_to_oc20: failed to open file '%s': %s", name, strerror( errno ) );
 		exit( 1 );
 	}
@@ -1839,9 +1875,9 @@ int content_to_oc20( char *name ) {
 
 	memset( new_line, 0, MAX_LINE );
 
-	while ( NULL != fgets( buff, MAX_LINE, f ) ) {
+	while (  File_get_line( f, buff, MAX_LINE ) > 0 ) {
 		if ( DEBUG || debug ) fprintf( stderr,  "'%s'\n", buff );
-		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", ftello( f ) );
+		if ( DEBUG || debug ) fprintf( stderr,  "Current offset: %ld\n", lseek( f, 0, SEEK_CUR ) );
 
 		if ( g_regex_match( regex, buff, 0, &match_info ) ) {
 			if ( DEBUG || debug ) {
@@ -1855,7 +1891,7 @@ int content_to_oc20( char *name ) {
 			strncpy( new_line, buff, match_start ); // Copy everything up to "extension"
 			strcat( new_line, &buff[ match_end ] ); // After "extension"
 
-			for( int i = strlen( new_line ); i < len - 1; i++ ) {
+			for( int i = strlen( new_line ) - 1; i < len - 1; i++ ) {
 				new_line[ i ] = ' ';
 			}
 
@@ -1868,14 +1904,14 @@ int content_to_oc20( char *name ) {
 			}
 
 			// Get 1 line back in file stream
-			if( -1 == fseeko( f, -1 * len, SEEK_CUR ) ) {
+			if( -1 == lseek( f, -1 * len, SEEK_CUR ) ) {
 				fprintf( stderr, "content_to_oc20: failed to set new position on stream: %s\n", strerror( errno ) );
 				exit( 1 );
 			}
 
-			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", ftello( f ) );
+			if ( DEBUG || debug ) fprintf( stderr,  "Stream position after: %ld\n", lseek( f, 0, SEEK_CUR ) );
 
-			if ( EOF == fputs( new_line, f ) ) {
+			if ( -1 == write( f, new_line, len ) ) {
 				fprintf( stderr, "content_to_oc20: failed to write back string to a file '%s': %s\n", name, strerror( errno ) );
 				exit( 1 );
 			}
@@ -1888,9 +1924,8 @@ int content_to_oc20( char *name ) {
 		}
 	}
 
-	fclose( f );
+	close( f );
 	g_regex_unref( regex );
-	g_match_info_unref( match_info );
 
 	return 0;
 }

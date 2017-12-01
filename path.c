@@ -121,42 +121,42 @@ void dump_slist( GSList *list ) {
 void dump_string( char *string ) {
 	char *p = string;
 	int i = 0;
-	int max = 1000;
+	int max = 100;
+	int width = 3;
 	char
-		*s_str = g_malloc0( max ),
-		*h_str = g_malloc0( max ),
-		*i_str = g_malloc0( max ),
+		*s_str = g_malloc0( max * width ),
+		*h_str = g_malloc0( max * width ),
+		// *i_str = g_malloc0( max ),
 		// *p_str = g_malloc0( max ),
-		*temp = g_malloc0( max );
+		*temp = g_malloc0( width );
 
 	strcpy( s_str, "str: " );
-	strcpy( i_str, "int: " );
+	// strcpy( i_str, "int: " );
 	strcpy( h_str, "hex: " );
 
-	printf( "Dumping the string:\n" );
-	printf( "%s\n", p );
-
 	while( *p != '\0' ) {
-		sprintf( temp, "%3c", *p );
+		sprintf( temp, "%3c", *p > 32 ? *p : '.' );
 		strncat( s_str, temp, strlen( temp ) );
-		memset( temp, 0, max );
+		memset( temp, 0, width );
 
 		sprintf( temp, "%3x", *p );
 		strncat( h_str, temp, strlen( temp ) );
-		memset( temp, 0, max );
+		memset( temp, 0, width );
 
-		sprintf( temp, "%4u", *p ); 
-		strncat( i_str, temp, strlen( temp ) );
-		memset( temp, 0, max );
+		// sprintf( temp, "%4u", *p ); 
+		// strncat( i_str, temp, strlen( temp ) );
+		// memset( temp, 0, max );
 
 		// sprintf( temp, "%11p", p );
 		// strncat( p_str, temp, strlen( temp ) );
 		// memset( temp, 0, max );
 
 		p++;
-		if ( i++ > 100 )break;
+		if ( i++ > max )break;
 	}
 
+	printf( "Dumping the string:\n" );
+	printf( "%s\n", string );
 	printf( "%s\n", s_str );
 	printf( "%s\n", h_str );
 	// printf( "%s\n", i_str );
@@ -164,7 +164,7 @@ void dump_string( char *string ) {
 
 	g_free( s_str );
 	g_free( h_str );
-	g_free( i_str );
+	// g_free( i_str );
 	// g_free( p_str );
 	g_free( temp );
 }
@@ -560,20 +560,59 @@ int Mkdir( char* path, int mod ) {
 }
 
 /**
- * Converts
+ * Reads one line from file pointed by file pointer
  */
-// int get_file_mode( mod ) {
-// 	mode_t mode = 0;
+int File_get_line( int fd, char *buffer, size_t size ) {
+	char c[ 1 ];
+	int count = 0;
+	int position = 0;
 
-// 	if ( mod & 256 ) mode |= S_IRUSR;
-// 	if ( mod & 128 ) mode |= S_IWUSR;
-// 	if ( mod & 64 )  mode |= S_IXUSR;
-// 	if ( mod & 32 )  mode |= S_IRGRP;
-// 	if ( mod & 16 )  mode |= S_IWGRP;
-// 	if ( mod & 8 )   mode |= S_IXGRP;
-// 	if ( mod & 4 )   mode |= S_IROTH;
-// 	if ( mod & 2 )   mode |= S_IWOTH;
-// 	if ( mod & 1 )   mode |= S_IXOTH;
+	memset( buffer, 0, size );
 
-// 	return mode;
-// }
+	while ( size-- > 0 && ( count = read( fd, c, 1 ) ) > 0 ) {
+		buffer[ position++ ] = *c;
+		if ( '\n' == *c ) break;
+	}
+
+	buffer[ size ] = '\0';
+
+	if ( count == -1 ) fprintf( stderr, "Read file error in %s\n", G_STRLOC );
+
+	return count;
+}
+
+/**
+ * Removes empty folders moving upward up to some depth
+ */
+int Rmdir_upward( char *name, int depth ) {
+	char *path = name;
+	int count = strlen( path ) - 1;
+
+	if ( -1 == rmdir( path ) ) {
+		if ( errno == ENOTEMPTY ) return 0;
+
+		fprintf( stderr, "Failed to delete directory %s\n", path );
+		return -1;
+	}
+
+	depth--;
+
+	while ( count >= 0 || depth ) {
+		if ( path[ count ] == '/' ) {
+			path[ count ] = '\0';
+
+			if ( -1 == rmdir( path ) ) {
+				if ( errno == ENOTEMPTY ) return 0;
+
+				fprintf( stderr, "Failed to delete directory %s\n", path );
+				return -1;
+			}
+
+			depth--;
+		}
+
+		count--;
+	}
+
+	return 0;
+}

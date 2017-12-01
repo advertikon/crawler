@@ -62,5 +62,7 @@ char *Strcat( char*, ... ) G_GNUC_NULL_TERMINATED;
 int iterate(  char* path, cb file_c, cb dir_c, cb err_c, void** );
 int Chmod( char*, int );
 int Mkdir( char*, int );
+int File_get_line( int fd, char*, size_t );
+int Rmdir_upward( char*, int );
 
 #endif
