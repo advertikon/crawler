@@ -1729,7 +1729,7 @@ int add_file_to_list( char *file, void **list ) {
  * iterator callback to process single file
  */
 void make_oc20_cb( void *name, void *data ) {
-	int debug = 1;
+	int debug = 0;
 
 	char *p;
 	char new_name[ path_max_size ];
