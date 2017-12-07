@@ -64,5 +64,6 @@ int Chmod( char*, int );
 int Mkdir( char*, int );
 int File_get_line( int fd, char*, size_t );
 int Rmdir_upward( char*, int );
+int SearchList( GSList*, char* );
 
 #endif

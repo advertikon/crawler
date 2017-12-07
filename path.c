@@ -616,3 +616,21 @@ int Rmdir_upward( char *name, int depth ) {
 
 	return 0;
 }
+
+/**
+ * Search SList for text, returns index
+ */
+int SearchList( GSList *l, char* text ) {
+	GSList *list = l;
+	int index = 0;
+
+	while ( NULL != list ) {
+		if ( 0 == strncmp( list->data, text, strlen( list->data ) ) )
+			return index;
+
+		index++;
+		list = list->next;
+	}
+
+	return -1;
+}

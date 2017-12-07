@@ -48,7 +48,7 @@ int fill_temp_package();
 int make_file( char*, mode_t );
 int fill_translation( FILE*, char* );
 int run_filters( void );
-int fetch_translation( FILE*, GSList*, GSList*, gboolean );
+int fetch_translation( FILE*, GSList**, GSList**, gboolean );
 int init_filters( void );
 int get_version( int*, int*, int* );
 char *get_package_dir( void );
@@ -96,6 +96,8 @@ void files_to_view( void );
 xmlDocPtr parseXMLDoc( char* );
 void make_oc20_cb( void*, void* );
 int add_file_to_list( char*, void** );
+void init_translation_lists( void );
+int save_all_the_translations( void );
 
 
 #define MAX_LINE 400

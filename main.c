@@ -33,6 +33,10 @@ GSList *exclude_folder_temp;
 GSList *include_regex_temp;
 GSList *exclude_regex_temp;
 
+// Translations
+GSList *catalog_translation = NULL;
+GSList *admin_translation = NULL;
+
 struct winsize win_size;
 
 regmatch_t m[ REGEX_MATCH_COUNT ];
@@ -787,7 +791,10 @@ int make_package() {
 
 	start_clock();
 	if( make_vqmod() ) exit( 1 );
-	end_clock( "VQMOD" ); 
+	end_clock( "VQMOD" );
+
+	// Clean translation lists
+	init_translation_lists();
 
 	start_clock();
 	if( run_filters() ) exit( 1 );
@@ -796,6 +803,9 @@ int make_package() {
 	start_clock();
 	if( php_lint() ) exit( 1 );
 	end_clock( "php lint" );
+
+	// Tun it after filters, since filters fill in translation lists
+	if ( save_all_the_translations() ) exit( 1 );
 
 	pckg_name = g_strdup_printf( pckg_name_templ, code->data, "OC23", major, minor, patch );
 	run_zip( pckg_name );
@@ -1264,16 +1274,19 @@ int make_file( char *name, mode_t mode ) {
 int fill_translation( FILE* f, char *name ) {
 	int debug = 0;
 
-	GSList *catalog_translation = NULL;
-	GSList *admin_translation = NULL;
-
 	char *p;
-	name = &name[ strlen( cwd ) ]; // Make it relative to CWD
+	name = &name[ strlen( cwd ) + 1 ]; // Make it relative to CWD
+
+	char *catalog_prefix = g_build_filename( pckg_tmp_dir, upload_folder, "catalog", NULL );
+	char *admin_prefix = g_build_filename( pckg_tmp_dir, upload_folder, "admin", NULL );
+
+	int admin_prefix_length = strlen( admin_prefix );
+	int catalog_prefix_length = strlen( catalog_prefix );
 
 	if ( DEBUG || debug ) fprintf( stderr, "Searching translations in: '%s'\n", name );
 
 	if ( NULL != strstr( name, "/language/" ) ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Not language - skip\n" );
+		if ( DEBUG || debug ) fprintf( stderr, "Is language file - skip\n" );
 
 		return 0; // Skip language files
 	}
@@ -1286,35 +1299,24 @@ int fill_translation( FILE* f, char *name ) {
 		return 0; // Skip some files
 	}
 
-	if ( 0 == strncmp( name, "catalog/", 8 ) ) {
+	if ( 0 == strncmp( name, catalog_prefix, catalog_prefix_length ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Catalog side\n" );
 
-		fetch_translation( f, catalog_translation, NULL, FALSE );
+		fetch_translation( f, &catalog_translation, NULL, FALSE );
 
-	} else if ( 0 == ( strncmp( name, "admin/", 6 ) ) ) {
+	} else if ( 0 == ( strncmp( name, admin_prefix, admin_prefix_length ) ) ) {
 		if ( DEBUG || debug ) fprintf( stderr, "Admin side\n" );
 
-		fetch_translation( f, admin_translation, NULL, FALSE );
+		fetch_translation( f, &admin_translation, NULL, FALSE );
 
 	} else {
 		if ( DEBUG || debug ) fprintf( stderr, "Common side\n" );
 
-		fetch_translation( f, admin_translation, catalog_translation, TRUE );
+		fetch_translation( f, &admin_translation, &catalog_translation, TRUE );
 	}
 
-	if ( g_slist_length( catalog_translation ) ) {
-		start_clock();
-		save_translation( "admin", admin_translation );
-		end_clock( "Translation admin" );
-		g_slist_free_full( catalog_translation, (GDestroyNotify)g_free );
-	}
-
-	if ( g_slist_length( admin_translation ) ) {
-		start_clock();
-		save_translation( "catalog", catalog_translation );
-		end_clock( "Translation catalog" );
-		g_slist_free_full( admin_translation, (GDestroyNotify)g_free );
-	}
+	g_free( admin_prefix );
+	g_free( catalog_prefix );
 
 	return 0;
 }
@@ -1322,7 +1324,7 @@ int fill_translation( FILE* f, char *name ) {
 /**
  * Scans file pointed to by f and fills in structure l
  */
-int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_lists ) {
+int fetch_translation( FILE* f, GSList **list1, GSList **list2, gboolean both_lists ) {
 	int debug = 0;
 
 	if ( DEBUG || debug )printf( "Parsing file for translations\n" );
@@ -1331,7 +1333,7 @@ int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_list
 	char *translation;
 
 	GError *error = NULL;
-	GRegex *regex = g_regex_new( "__\\( \\s* ('|\") (.*?) \\1 \\s* \\)", G_REGEX_EXTENDED, 0, &error );
+	GRegex *regex = g_regex_new( "__\\( \\s* ('|\") (.+?) (?<!\\\\)\\1 [^)]* \\)", G_REGEX_EXTENDED, 0, &error );
 	GMatchInfo *match_info;
 
 	if ( NULL != error ) {
@@ -1342,21 +1344,26 @@ int fetch_translation( FILE* f, GSList *list1, GSList *list2, gboolean both_list
 	rewind( f );
 
 	while( NULL != fgets( line, MAX_LINE, f ) ) {
-		if ( debug ) fprintf( stderr, "Processing line '%s'", line );
+		// if ( debug ) fprintf( stderr, "Processing line '%s'", line );
 
 		g_regex_match( regex, line, 0, &match_info );
 
 		while ( g_match_info_matches( match_info ) ) {
-			// if ( DEBUG || debug )printf( "Full match: '%s'\n", g_match_info_fetch( match_info, 0 ) );
+			// if ( debug ) fprintf( stderr, "Processing line '%s'", line );
 
 			translation = g_match_info_fetch( match_info, 2 );
+			g_strstrip( translation );
 
 			if ( debug ) fprintf( stderr, "Match found: '%s'\n", translation );
 
-			list1 = g_slist_append( list1, translation );
+			if ( '\0' != translation[ 0 ] && -1 == SearchList( *list1, translation ) ) {
+				*list1 = g_slist_append( *list1, g_strdup( translation ) );
+			}
 
 			if ( both_lists ) {
-				list2 = g_slist_append( list2, g_strdup( translation ) );
+				if ( '\0' != translation[ 0 ] && -1 == SearchList( *list2, translation ) ) {
+					*list2 = g_slist_append( *list2, g_strdup( translation ) );
+				}
 			}
 
 			g_free( translation );
@@ -1432,6 +1439,69 @@ int php_lint_cb( char *name, void *data ) {
 	}
 
 	return 0;
+}
+
+/**
+ * Cleans translation lists
+ */
+void init_translation_lists() {
+	int debug = 0;
+
+	if ( DEBUG || debug ) fprintf( stderr, "Initializing translation lists\n" );
+
+	if ( NULL != catalog_translation ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Freeing catalog translation list\n" );
+
+		g_slist_free_full( catalog_translation, g_free );
+		catalog_translation = NULL;
+	}
+
+	if ( NULL != admin_translation ) {
+		if ( DEBUG || debug ) fprintf( stderr, "Freeing admin translation list\n" );
+
+		g_slist_free_full( admin_translation, g_free );
+		admin_translation = NULL;
+	}
+}
+
+/**
+ * Saves translations form lists to files
+ */
+int save_all_the_translations() {
+	int debug = 0;
+
+	if ( DEBUG || debug ) fprintf( stderr, "Saving translation to the disk\n" );
+
+	if ( g_slist_length( catalog_translation ) ) {
+		catalog_translation = g_slist_sort( catalog_translation, (GCompareFunc)strcmp );
+
+		if ( DEBUG || debug ) {
+			fprintf( stderr, "Catalog side translations:\n" );
+			dump_slist( catalog_translation );
+		}
+
+		start_clock();
+		save_translation( "catalog", catalog_translation );
+		end_clock( "Translation catalog" );
+		// g_slist_free_full( catalog_translation, (GDestroyNotify)g_free );
+	}
+
+	if ( g_slist_length( admin_translation ) ) {
+		admin_translation = g_slist_sort( admin_translation, (GCompareFunc)strcmp );
+
+		if ( DEBUG || debug ) {
+			fprintf( stderr, "Admin side translations:\n" );
+			dump_slist( admin_translation );
+		}
+
+		start_clock();
+		save_translation( "admin", admin_translation );
+		end_clock( "Translation admin" );
+		// g_slist_free_full( admin_translation, (GDestroyNotify)g_free );
+	}
+
+	return 0;
+
 }
 
 // TODO: implement catalog translation maybe
@@ -1518,9 +1588,9 @@ int save_translation( char *name, GSList *l ) {
 
 	current = l;
 
-	if ( NULL != current ) {
-		if ( DEBUG || debug ) fprintf( stderr, "Writing translations....\n" );
+	if ( DEBUG || debug ) fprintf( stderr, "Writing translations....\n" );
 
+	while ( NULL != current ) {
 		if ( debug ) fprintf( stderr, "$_['%1$s'] = '%1$s';\n", (char*)current->data );
 
 		sprintf( buff, "$_['%1$s'] = '%1$s';\n", (char*)current->data );
@@ -1532,15 +1602,21 @@ int save_translation( char *name, GSList *l ) {
 		fprintf( stderr, "From FILE: %p, to FILE %p\n", from_stream, to_stream );
 	}
 
+
 	if ( NULL != from_stream ) {
 		fclose( from_stream );
 	}
 
 	fclose( to_stream );
+
+	php_lint_cb( to_name, NULL );
+
 	g_free( translation_folder );
 	g_free( code );
 	g_free( file_name );
 	g_free( to_folder );
+	g_free( to_name );
+	g_free( from_name );
 
 	if ( debug ) fprintf( stderr, "Exit save translation\n" );
 
