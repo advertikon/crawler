@@ -1416,6 +1416,10 @@ int php_lint_cb( char *name, void *data ) {
 		)
 	) return 0;
 
+	if ( g_str_has_suffix( name, "GdBmp.php" ) ) { // it fails to lint since rewrites gd function
+		return 0;
+	}
+
 	cmd = Strcat( "php -l ", name, " > /dev/null", NULL );
 
 	if ( DEBUG || debug ) printf( "Run command '%s'\n", cmd );
