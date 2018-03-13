@@ -2029,7 +2029,7 @@ int add_version( FILE *f ) {
 	int match_start;
 	int match_end;
 
-	GRegex *regex = g_regex_new( "@version \\s+ ( [0-9]+ \\. [0-9]+ \\. [0-9]+ ) \\s* $", G_REGEX_EXTENDED, 0, NULL );
+	GRegex *regex = g_regex_new( "@version \\s ( \\s* [0-9]+ \\. [0-9]+ \\. [0-9]+ \\s* ) $", G_REGEX_EXTENDED, 0, NULL );
 	GMatchInfo *match_info;
 
 	GSList *list_major, *list_minor, *list_patch;
@@ -2073,7 +2073,7 @@ int add_version( FILE *f ) {
 			len = strlen( config_version );
 
 			// Matched version length
-			matched_len = match_end - match_start;
+			matched_len = match_end - match_start - 1;
 
 			// Buffer length
 			buff_len = strlen( buff );
